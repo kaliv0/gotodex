@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -112,10 +113,9 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 
-	// StringArray: repeat flag (-t WARN -t REVISIT).
-	cmd.Flags().StringArrayVarP(&f.tokens, "tokens", "t", nil, "tokens to search (with defaults TODO, FIXME)")
+	cmd.Flags().StringSliceVarP(&f.tokens, "tokens", "t", nil, "tokens to search (comma-separated - defaults TODO,FIXME)")
 	cmd.Flags().BoolVarP(&f.ignoreDefault, "ignore-default", "i", false, "use only -t tokens")
-	cmd.Flags().StringArrayVarP(&f.exclude, "exclude", "x", nil, "gitignore-style exclude patterns")
+	cmd.Flags().StringSliceVarP(&f.exclude, "exclude", "x", nil, "gitignore-style exclude patterns (comma-separated)")
 	cmd.Flags().BoolVarP(&f.includeHidden, "include-hidden", "H", false, "do not apply default .* / __* excludes")
 	cmd.Flags().BoolVarP(&f.useGitignore, "use-gitignore", "g", false, "apply .gitignore from scan root")
 	cmd.Flags().BoolVarP(&f.fullPath, "full-path", "f", false, "display absolute paths")
@@ -133,6 +133,8 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	})
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		f.maxDepthSet = cmd.Flags().Changed("max-depth")
+		f.tokens = trimNonEmpty(f.tokens)
+		f.exclude = trimNonEmpty(f.exclude)
 	}
 	cmd.SetVersionTemplate("gtx version {{.Version}}\n")
 
@@ -153,6 +155,19 @@ func validate(cmd *cobra.Command, f *flagBundle) error {
 		return fmt.Errorf("shouldn't mix --stdout and --out or --tee flags")
 	}
 	return nil
+}
+
+// trimNonEmpty trims each entry and drops blanks (spaces around commas, empty slots).
+func trimNonEmpty(ss []string) []string {
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func flagNames(cmd *cobra.Command, name string) string {

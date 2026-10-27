@@ -99,6 +99,103 @@ func TestArgvReachesExtractor(t *testing.T) {
 	}
 }
 
+// writeTokenFixture writes a file with WARN and REVISIT markers for -t tests.
+func writeTokenFixture(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "tokens.py")
+	if err := os.WriteFile(path, []byte("# WARN: careful\n# REVISIT: later\n# TODO: skip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestTokensCommaSeparated(t *testing.T) {
+	src := writeTokenFixture(t)
+	var stdout bytes.Buffer
+	err := runRoot([]string{src, "-s", "-t", "WARN,REVISIT", "-i"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("runRoot: %v", err)
+	}
+	text := stdout.String()
+	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("missing %q\n%s", needle, text)
+		}
+	}
+	if strings.Contains(text, "TODO: skip") {
+		t.Fatalf("TODO must be ignored with -i\n%s", text)
+	}
+}
+
+func TestTokensRepeatedFlags(t *testing.T) {
+	src := writeTokenFixture(t)
+	var stdout bytes.Buffer
+	err := runRoot(
+		[]string{src, "-s", "-t", "WARN", "-t", "REVISIT", "-i"},
+		&stdout, &bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("runRoot: %v", err)
+	}
+	text := stdout.String()
+	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("missing %q\n%s", needle, text)
+		}
+	}
+	if strings.Contains(text, "TODO: skip") {
+		t.Fatalf("TODO must be ignored with -i\n%s", text)
+	}
+}
+
+func TestTokensCommaSeparatedTrimsSpaces(t *testing.T) {
+	src := writeTokenFixture(t)
+	var stdout bytes.Buffer
+	err := runRoot([]string{src, "-s", "-t", "WARN, REVISIT", "-i"}, &stdout, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("runRoot: %v", err)
+	}
+	text := stdout.String()
+	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("missing %q\n%s", needle, text)
+		}
+	}
+}
+
+func TestExcludeCommaSeparated(t *testing.T) {
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "keep.py")
+	skipA := filepath.Join(dir, "skip_a.py")
+	skipB := filepath.Join(dir, "skip_b.py")
+	for path, body := range map[string]string{
+		keep:  "# TODO: keep\n",
+		skipA: "# TODO: skip-a\n",
+		skipB: "# TODO: skip-b\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout bytes.Buffer
+	err := runRoot(
+		[]string{dir, "-s", "-r", "-x", "skip_a.py,skip_b.py"},
+		&stdout, &bytes.Buffer{},
+	)
+	if err != nil {
+		t.Fatalf("runRoot: %v", err)
+	}
+	text := stdout.String()
+	if !strings.Contains(text, "TODO: keep") {
+		t.Fatalf("missing keep\n%s", text)
+	}
+	for _, bad := range []string{"TODO: skip-a", "TODO: skip-b"} {
+		if strings.Contains(text, bad) {
+			t.Fatalf("excluded hit still present: %q\n%s", bad, text)
+		}
+	}
+}
+
 func TestRMLimitsDepthViaCLI(t *testing.T) {
 	sample := materializeCLISample(t)
 	out := filepath.Join(sample, "cli_depth_out.txt")
