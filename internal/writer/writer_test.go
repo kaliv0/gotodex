@@ -2,7 +2,6 @@ package writer_test
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -373,9 +372,8 @@ func TestPageAcceptsPAGERWithArgs(t *testing.T) {
 	}
 }
 
-// Debug is stdout-only (no tee, no StopExtraction on EPIPE).
-// Path may already exist empty from NewWith; Debug must not write to it.
-func TestDebugDoesNotTeeOrStopOnEPIPE(t *testing.T) {
+// Tee + EPIPE: Debug disables stdout, keeps writing file.
+func TestDebugTeeSurvivesBrokenStdout(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	w := mustNewWith(t, writer.Options{
 		Path:     outPath,
@@ -383,22 +381,34 @@ func TestDebugDoesNotTeeOrStopOnEPIPE(t *testing.T) {
 		TTY:      false,
 		Stdout:   brokenPipeWriter{},
 	})
-	err := w.Debug("dbg\n")
-	if !errors.Is(err, syscall.EPIPE) {
-		t.Fatalf("Debug err=%v want EPIPE", err)
+	if err := w.Debug("dbg\n"); err != nil {
+		t.Fatalf("tee+EPIPE Debug should not fail: %v", err)
 	}
-	if !w.ToStdout {
-		t.Fatal("Debug must not clear ToStdout")
+	if w.ToStdout {
+		t.Fatal("ToStdout should be cleared after EPIPE")
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(outPath)
 	if err != nil {
-		t.Fatalf("out path should exist after NewWith, err=%v", err)
+		t.Fatal(err)
 	}
-	if string(body) != "" {
-		t.Fatalf("Debug must not tee to out file, got %q", body)
+	if string(body) != "dbg\n" {
+		t.Fatalf("file=%q want dbg\\n", body)
+	}
+}
+
+// Stdout-only Debug + EPIPE → StopExtraction (same as hits).
+func TestDebugStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
+	w := mustNewWith(t, writer.Options{
+		ToStdout: true,
+		TTY:      false,
+		Stdout:   brokenPipeWriter{},
+	})
+	err := w.Debug("dbg\n")
+	if err != (writer.StopExtraction{}) {
+		t.Fatalf("err=%v (%T) want StopExtraction", err, err)
 	}
 }
 

@@ -95,10 +95,12 @@ func (w *Writer) WriteEntry(lineNum int, line string) error {
 	return w.write(fmt.Sprintf("\tline %d: %s", lineNum, line))
 }
 
+// Debug uses write (tee / StopExtraction like hits).
 func (w *Writer) Debug(text string) error {
-	return w.writeStdout(text)
+	return w.write(text)
 }
 
+// Error writes to stderr, or into the pager buffer when UsesPager.
 func (w *Writer) Error(text string) error {
 	if w.UsesPager() {
 		return w.writeStdout(text)
@@ -107,6 +109,8 @@ func (w *Writer) Error(text string) error {
 	return err
 }
 
+// write sends to stdout and/or file. Stdout-only EPIPE → StopExtraction;
+// tee EPIPE → disableStdout then keep writing the file.
 func (w *Writer) write(text string) error {
 	if w.ToStdout {
 		if err := w.writeStdout(text); err != nil {

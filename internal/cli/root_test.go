@@ -246,7 +246,7 @@ func TestTeeViaCLI(t *testing.T) {
 	}
 }
 
-// -d debug writes stdout outside Writer.write → EPIPE reaches Execute → 141.
+// Stdout-only -d EPIPE → StopExtraction → exit 141 (same path as hits).
 func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 	sample := materializeCLISample(t)
 	code := finish(runRoot(

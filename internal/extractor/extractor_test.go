@@ -330,7 +330,7 @@ func TestSkipsUndecodableFileAndContinues(t *testing.T) {
 	mustContain(t, stderr.String(), "skipping", "bad.bin")
 }
 
-// -d trail: "processing:" + tabbed pathName per file.
+// File-only -d: processing trail in out file; stdout empty.
 func TestDebugEmitsProcessingTrail(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "good.py"), "# TODO: keep me\n")
@@ -344,7 +344,10 @@ func TestDebugEmitsProcessingTrail(t *testing.T) {
 	ex.StdoutWriter = &stdout
 	ex.StderrWriter = &stderr
 	mustRun(t, ex)
-	mustContain(t, stdout.String(), "processing:\n", "\tgood.py\n")
+	mustContain(t, readFile(t, out), "processing:\n", "\tgood.py\n")
+	if stdout.Len() != 0 {
+		t.Fatalf("file-only -d: stdout empty, got %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("no skip expected; stderr=%q", stderr.String())
 	}
