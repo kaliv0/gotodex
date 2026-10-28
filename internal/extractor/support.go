@@ -49,7 +49,7 @@ type Options struct {
 // --- tokens ---
 
 // prepareTokenPattern builds a case-insensitive token regexp.
-// Go RE2 has no lookbehind; word boundaries are checked in findToken.
+// Go RE2 has no lookbehind. Word boundaries are checked in findToken.
 func prepareTokenPattern(tokens []string, ignoreDefault bool) (*regexp.Regexp, error) {
 	var toks []string
 	if !ignoreDefault {
@@ -120,7 +120,7 @@ var errInvalidSnippetCount = errors.New("invalid snippet count")
 
 // snippetCount parses optional `{N}` immediately after the matched token.
 //
-// tokenEnd is the byte index right after the token; it must land on '{' to
+// tokenEnd is the byte index right after the token. It must land on '{' to
 // parse a count. If line[tokenEnd] is not '{', returns 1.
 //
 // {N} means N total lines in the snippet (token line + N-1 following reads).
@@ -250,8 +250,8 @@ func excludeMatch(gi *ignore.GitIgnore, rel string, isDir bool) bool {
 
 // prepareExcludeSpec builds the exclude GitIgnore:
 //
-//	order: DefaultGlobs (unless includeHidden) → .gitignore (if -g and root is dir) → -x
-//	dedupe preserving order (first wins); blank/#/whitespace lines are no-ops
+//	order: DefaultGlobs (unless includeHidden) -> .gitignore (if -g and root is dir) -> -x
+//	dedupe preserving order (first wins). Blank/#/whitespace lines are no-ops.
 func prepareExcludeSpec(root string, exclude []string, includeHidden, useGitignore bool) (*ignore.GitIgnore, error) {
 	var lines []string
 	if !includeHidden {
@@ -286,7 +286,7 @@ func dedupeFirst(in []string) []string {
 }
 
 // getGitignorePatterns reads root/.gitignore (splitlines).
-// Missing path or non-regular file → empty slice (no error).
+// Missing path or non-regular file -> empty slice (no error).
 func getGitignorePatterns(root string) ([]string, error) {
 	p := filepath.Join(root, ".gitignore")
 	fi, err := os.Stat(p)
@@ -313,7 +313,7 @@ func (e *Extractor) isExcluded(path string, isDir bool) bool {
 	if rel == "." || strings.HasPrefix(rel, "../") {
 		return false
 	}
-	// Skip the configured out file (abs path); stdout-only never skips.
+	// Skip the configured out file (abs path). Stdout-only never skips.
 	if e.isOutPath(path) {
 		return true
 	}
@@ -321,7 +321,7 @@ func (e *Extractor) isExcluded(path string, isDir bool) bool {
 }
 
 // isOutPath reports whether path is the configured out file (Abs equality).
-// Stdout-only / empty outAbs ⇒ never skip. outAbs is cached once in setOut.
+// Stdout-only / empty outAbs => never skip. outAbs is cached once in setOut.
 func (e *Extractor) isOutPath(path string) bool {
 	if e.outAbs == "" {
 		return false
@@ -330,7 +330,7 @@ func (e *Extractor) isOutPath(path string) bool {
 	return err == nil && absPath == e.outAbs
 }
 
-// splitlines splits on \n / \r\n / \r; no keepends; no trailing empty from a
+// splitlines splits on \n / \r\n / \r. No keepends. No trailing empty from a
 // final line break.
 func splitlines(data []byte) []string {
 	if len(data) == 0 {

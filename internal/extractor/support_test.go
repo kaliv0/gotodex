@@ -135,7 +135,7 @@ func TestTokenEdgeCases(t *testing.T) {
 	})
 	t.Run("overlap_leftmost_longest", func(t *testing.T) {
 		m := pattern(t, []string{"AB", "ABC", "BC"}, true)
-		// space before A so \w-boundary allows a match; prefer longest alt
+		// space before A so \w-boundary allows a match. Prefer longest alt.
 		if got := matched(m, " ABC "); got != "ABC" {
 			t.Fatalf("got %q want ABC", got)
 		}
@@ -314,7 +314,7 @@ func TestGMissingGitignoreIsNoop(t *testing.T) {
 }
 
 func TestFilePathGIsNoopButStillProcesses(t *testing.T) {
-	// -g only loads .gitignore for directory scans → explicit file PATH always processed
+	// -g only loads .gitignore for directory scans -> explicit file PATH always processed
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")
 	ex := mustNew(t, Options{
@@ -372,7 +372,7 @@ func TestPrepareExcludeSpecXPatterns(t *testing.T) {
 }
 
 func TestPrepareExcludeSpecBangOrder(t *testing.T) {
-	// Last gitignore-style rule wins; -x bang after gitignore vendor/.
+	// Last gitignore-style rule wins. -x bang after gitignore vendor/.
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".gitignore"), "vendor/\nskip_me.py\n")
 	gi, err := prepareExcludeSpec(dir, []string{"!vendor/", "!vendor/**"}, true, true)

@@ -66,7 +66,7 @@ func NewRoot() *cobra.Command {
 	return newRoot(nil, nil)
 }
 
-// newRoot builds root; stdout/stderr inject Extractor sinks (test seam for -s/--tee/EPIPE).
+// newRoot builds root. stdout/stderr inject Extractor sinks (test seam for -s/--tee/EPIPE).
 func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	f := &flagBundle{}
 
@@ -76,7 +76,7 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 		Long:          banner,
 		Version:       Version,
 		SilenceUsage:  true,
-		SilenceErrors: true, // finish() prints; avoid cobra + finish double-print
+		SilenceErrors: true, // finish() prints. Avoid cobra + finish double-print.
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 				return &exitError{Code: 2, Err: err}
@@ -127,7 +127,7 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	cmd.Flags().BoolVarP(&f.stdout, "stdout", "s", false, "write to stdout only")
 	cmd.Flags().BoolVar(&f.tee, "tee", false, "write to stdout and file")
 
-	// Flag parse failures → exit 2 (same as validate); no string-matching in finish.
+	// Flag parse failures -> exit 2 (same as validate). No string-matching in finish.
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &exitError{Code: 2, Err: err}
 	})
@@ -200,7 +200,7 @@ func runRoot(args []string, stdout, stderr io.Writer) error {
 }
 
 // finish maps err to an exit code and prints stderr when needed.
-// Quiet on 0/130/141; "gtx: error:" prefix on usage (2); bare message on runtime (1).
+// Quiet on 0/130/141. "gtx: error:" prefix on usage (2). Bare message on runtime (1).
 func finish(err error) int {
 	code := exitCode(err)
 	switch code {
@@ -215,7 +215,7 @@ func finish(err error) int {
 }
 
 // exitCode maps run errors to process exit codes.
-// 0 ok; usage/validate→2; runtime→1; StopExtraction/EPIPE/ErrClosedPipe→141; interrupt→130.
+// 0 ok. Usage/validate -> 2. Runtime -> 1. StopExtraction/EPIPE/ErrClosedPipe -> 141. Interrupt -> 130.
 func exitCode(err error) int {
 	if err == nil {
 		return 0
@@ -233,8 +233,8 @@ func exitCode(err error) int {
 }
 
 // runInterruptible runs fn under SIGINT via NotifyContext, synchronously.
-// Cancel is observed between files; fn finishes the current file before return.
-// context.Canceled → errInterrupted (exit 130).
+// Cancel is observed between files. fn finishes the current file before return.
+// context.Canceled -> errInterrupted (exit 130).
 func runInterruptible(fn func(context.Context) error) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

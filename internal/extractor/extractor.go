@@ -20,14 +20,14 @@ import (
 
 // Extractor scans PATH for tokens and writes results.
 type Extractor struct {
-	StdoutWriter io.Writer // -s/--tee sink; nil => os.Stdout (test seam)
-	StderrWriter io.Writer // Writer.Error sink; nil => os.Stderr (test seam)
+	StdoutWriter io.Writer // -s/--tee sink. nil => os.Stdout (test seam)
+	StderrWriter io.Writer // Writer.Error sink. nil => os.Stderr (test seam)
 	re           *regexp.Regexp
 	gi           *ignore.GitIgnore
 	out          *writer.Writer
 	afterFile    func(path string) // after each non-excluded file (mid-walk cancel seam)
-	root         string            // filepath.Clean(opts.Path); root-equality exclude guard
-	outAbs       string            // filepath.Abs(out.Path) once; empty ⇒ no out-file skip
+	root         string            // filepath.Clean(opts.Path). Root-equality exclude guard
+	outAbs       string            // filepath.Abs(out.Path) once. Empty => no out-file skip
 	opts         Options
 }
 
@@ -50,8 +50,8 @@ func New(opts Options) (*Extractor, error) {
 }
 
 // Run extracts tokens from opts.Path into the configured out writer.
-// Cancel is cooperative: checked here and at processFile/processDir entry;
-// an in-flight file read still finishes. nil ctx ⇒ context.Background().
+// Cancel is cooperative: checked here and at processFile/processDir entry.
+// An in-flight file read still finishes. nil ctx => context.Background().
 func (e *Extractor) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -80,7 +80,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Do not swallow StopExtraction: CLI maps it → exit 141.
+	// Do not swallow StopExtraction: CLI maps it -> exit 141.
 	switch {
 	case info.Mode().IsRegular():
 		return e.processFile(ctx, e.opts.Path)
@@ -92,7 +92,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 }
 
 // setOut installs the out writer and caches Abs(Path) once for out-file skip.
-// Propagates Writer open errors (Path set ⇒ create/truncate immediately).
+// Propagates Writer open errors (Path set => create/truncate immediately).
 func (e *Extractor) setOut() error {
 	path, toStdout := "", true
 	if !e.opts.Stdout {
@@ -124,7 +124,7 @@ func (e *Extractor) setOut() error {
 	e.out = w
 	e.outAbs = ""
 	if w.Path != "" {
-		e.outAbs, _ = filepath.Abs(w.Path) // Abs err ⇒ ""; skip out-file match
+		e.outAbs, _ = filepath.Abs(w.Path) // Abs err => "". Skip out-file match.
 	}
 	return nil
 }
@@ -136,9 +136,9 @@ func (e *Extractor) debug(msg string) error {
 	return e.out.Debug(msg)
 }
 
-// processDir walks dir: exclude check, then depth > maxDepth gate; descend
-// only when Recursive. DirEntry is Lstat-based (no symlink follow). Files
-// then dirs, ReadDir name order.
+// processDir walks dir: exclude check, then depth > maxDepth gate.
+// Descend only when Recursive. DirEntry is Lstat-based (no symlink follow).
+// Files then dirs, ReadDir name order.
 func (e *Extractor) processDir(ctx context.Context, dir string, depth int) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -206,7 +206,7 @@ func (e *Extractor) processFile(ctx context.Context, path string) error {
 		line, readErr := br.ReadString('\n')
 		if line != "" {
 			lineNo++
-			// Invalid UTF-8 → abort file, keep prior hits; Error only when Debug.
+			// Invalid UTF-8 -> abort file, keep prior hits. Error only when Debug.
 			if !utf8.ValidString(line) {
 				return e.reportSkipUndecodable(path, utf8DecodeErr(line))
 			}
@@ -226,7 +226,7 @@ func (e *Extractor) processFile(ctx context.Context, path string) error {
 	}
 }
 
-// reportSkipUndecodable emits Writer.Error when Debug; never fails the whole run for the skip itself.
+// reportSkipUndecodable emits Writer.Error when Debug. Never fails the whole run for the skip itself.
 func (e *Extractor) reportSkipUndecodable(path string, cause error) error {
 	if !e.opts.Debug {
 		return nil
@@ -257,7 +257,7 @@ func (e *Extractor) writeHit(br *bufio.Reader, path, line string, lineNo int, m 
 		}
 		headerAdded = true
 	}
-	// Validate {N} under concise too (no expand; still slice from token).
+	// Validate {N} under concise too (no expand, still slice from token).
 	n, err := snippetCount(line, m.End)
 	if err != nil {
 		return lineNo, headerAdded, err
@@ -276,7 +276,7 @@ func (e *Extractor) writeHit(br *bufio.Reader, path, line string, lineNo int, m 
 		line += "\n"
 	}
 	if displayLine != lineNo {
-		// Leading "\n" → blank after "line N:"; body double-tab indented.
+		// Leading "\n" -> blank after "line N:". Body double-tab indented.
 		line = indent(dedent("\n"+line), "\t\t")
 	} else {
 		line = dedent(line)

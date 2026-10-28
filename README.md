@@ -8,7 +8,7 @@ Peak mud digger and TODO extractor
 
 ```bash
 go install ./cmd/gtx
-# or: make build → bin/gtx
+# or: make build -> bin/gtx
 
 gtx <PATH> [OPTIONS...]
 ```

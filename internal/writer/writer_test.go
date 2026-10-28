@@ -259,7 +259,7 @@ func TestFileOnlyWrite(t *testing.T) {
 	}
 }
 
-// Path set → open/truncate before Write*.
+// Path set -> open/truncate before Write*.
 func TestOutPathTruncatedOnInit(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	if err := os.WriteFile(outPath, []byte("stale\n"), 0o644); err != nil {
@@ -278,7 +278,7 @@ func TestOutPathTruncatedOnInit(t *testing.T) {
 	}
 }
 
-// Preserve existing LESS; page must not overwrite.
+// Preserve existing LESS. page must not overwrite.
 func TestPagePreservesLESSWhenSet(t *testing.T) {
 	t.Setenv("LESS", "-S")
 	t.Setenv("PAGER", "true")
@@ -399,7 +399,7 @@ func TestDebugTeeSurvivesBrokenStdout(t *testing.T) {
 	}
 }
 
-// Stdout-only Debug + EPIPE → StopExtraction (same as hits).
+// Stdout-only Debug + EPIPE -> StopExtraction (same as hits).
 func TestDebugStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
 	w := mustNewWith(t, writer.Options{
 		ToStdout: true,
@@ -461,7 +461,7 @@ type flushPipeWriter struct{}
 func (f *flushPipeWriter) Write(p []byte) (int, error) { return len(p), nil }
 func (f *flushPipeWriter) Flush() error                { return syscall.EPIPE }
 
-// Unix-only: EPIPE lives in writer.go; no GOOS-split brokenpipe_*.go stubs.
+// Unix-only: EPIPE lives in writer.go. No GOOS-split brokenpipe_*.go stubs.
 func TestNoBrokenPipeSplitFiles(t *testing.T) {
 	matches, err := filepath.Glob("brokenpipe_*.go")
 	if err != nil {

@@ -246,7 +246,7 @@ func TestTeeViaCLI(t *testing.T) {
 	}
 }
 
-// Stdout-only -d EPIPE → StopExtraction → exit 141 (same path as hits).
+// Stdout-only -d EPIPE -> StopExtraction -> exit 141 (same path as hits).
 func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 	sample := materializeCLISample(t)
 	code := finish(runRoot(
@@ -259,7 +259,7 @@ func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 	}
 }
 
-// Stdout-only write EPIPE → StopExtraction → exit 141.
+// Stdout-only write EPIPE -> StopExtraction -> exit 141.
 func TestSBrokenPipeWriteExits141(t *testing.T) {
 	sample := materializeCLISample(t)
 	code := finish(runRoot(
@@ -320,13 +320,13 @@ func TestExitCodeMapping(t *testing.T) {
 	}
 }
 
-// runInterruptible: context.Canceled → errInterrupted → exit 130.
+// runInterruptible: context.Canceled -> errInterrupted -> exit 130.
 func TestRunInterruptibleMapsCanceled(t *testing.T) {
 	err := runInterruptible(func(ctx context.Context) error {
 		return context.Canceled
 	})
 	if !errors.Is(err, errInterrupted) {
-		t.Fatalf("Canceled → %v want errInterrupted", err)
+		t.Fatalf("Canceled -> %v want errInterrupted", err)
 	}
 	if got := exitCode(err); got != 130 {
 		t.Fatalf("exit=%d want 130", got)
@@ -337,10 +337,10 @@ func TestRunInterruptibleMapsCanceled(t *testing.T) {
 	other := errors.New("boom")
 	err = runInterruptible(func(context.Context) error { return other })
 	if !errors.Is(err, other) {
-		t.Fatalf("other err → %v", err)
+		t.Fatalf("other err -> %v", err)
 	}
 	if err := runInterruptible(func(context.Context) error { return nil }); err != nil {
-		t.Fatalf("nil → %v", err)
+		t.Fatalf("nil -> %v", err)
 	}
 }
 
@@ -447,6 +447,6 @@ func (brokenPipeWriter) Write([]byte) (int, error) {
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	// internal/cli → repo root (same as materializeCLISample).
+	// internal/cli -> repo root (same as materializeCLISample).
 	return filepath.Clean(filepath.Join("..", ".."))
 }

@@ -22,7 +22,7 @@ type Writer struct {
 	stdout   io.Writer
 	stderr   io.Writer
 	file     *os.File
-	pager    func(string)  // nil => default page(); TTY Close hook
+	pager    func(string)  // nil => default page(). TTY Close hook
 	pagerBuf *bytes.Buffer // non-nil => TTY pager mode
 	Path     string        // empty => no file
 	mu       sync.Mutex
@@ -39,14 +39,14 @@ type Options struct {
 	TTY      bool // when ToStdout: buffer then page on Close
 }
 
-// New builds a Writer. path empty and toStdout false is invalid for real runs;
-// callers set at least one sink. TTY from os.Stdout. Path set ⇒ open/truncate now.
+// New builds a Writer. path empty and toStdout false is invalid for real runs.
+// Callers set at least one sink. TTY from os.Stdout. Path set => open/truncate now.
 func New(path string, toStdout bool) (*Writer, error) {
 	return NewWith(Options{Path: path, ToStdout: toStdout, TTY: toStdout && stdoutIsTTY()})
 }
 
 // NewWith builds a Writer from Options (inject stdout/stderr/pager/TTY in tests).
-// Path set ⇒ open/truncate immediately.
+// Path set => open/truncate immediately.
 func NewWith(opts Options) (*Writer, error) {
 	stdout := opts.Stdout
 	if stdout == nil {
@@ -109,8 +109,8 @@ func (w *Writer) Error(text string) error {
 	return err
 }
 
-// write sends to stdout and/or file. Stdout-only EPIPE → StopExtraction;
-// tee EPIPE → disableStdout then keep writing the file.
+// write sends to stdout and/or file. Stdout-only EPIPE -> StopExtraction.
+// Tee EPIPE -> disableStdout then keep writing the file.
 func (w *Writer) write(text string) error {
 	if w.ToStdout {
 		if err := w.writeStdout(text); err != nil {
@@ -135,7 +135,7 @@ func (w *Writer) disableStdout() {
 func (w *Writer) writeFile(text string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	// File opened in New/NewWith when Path set; nil after Close or when Path empty.
+	// File opened in New/NewWith when Path set. Nil after Close or when Path empty.
 	if w.file == nil {
 		return nil
 	}
