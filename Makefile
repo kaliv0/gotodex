@@ -1,15 +1,23 @@
-.PHONY: help fmt vet test build tidy clean all ci
+GOLANGCI_VERSION ?= v2.13.2
+
+.PHONY: help mod-verify fmt vet lint staticcheck build test test-race tidy clean all
 
 help:
 	@echo "Targets:"
-	@echo "  tidy    go mod tidy"
-	@echo "  fmt     gofmt + goimports if present"
-	@echo "  vet     go vet"
-	@echo "  test    go test ./..."
-	@echo "  build   build bin/gtx"
-	@echo "  clean   remove bin/ and coverage"
-	@echo "  ci      fmt check + vet + test"
-	@echo "  all     tidy fmt vet test build"
+	@echo "  mod-verify   go mod verify"
+	@echo "  tidy         go mod tidy"
+	@echo "  fmt          gofmt + goimports if present"
+	@echo "  vet          go vet ./..."
+	@echo "  lint         golangci-lint via go run ($(GOLANGCI_VERSION))"
+	@echo "  staticcheck  staticcheck ./..."
+	@echo "  build        build bin/gtx"
+	@echo "  test         go test ./..."
+	@echo "  test-race    go test -race ./..."
+	@echo "  clean        remove bin/ and coverage"
+	@echo "  all          mod-verify, lint, build, test"
+
+mod-verify:
+	go mod verify
 
 tidy:
 	go mod tidy
@@ -21,19 +29,23 @@ fmt:
 vet:
 	go vet ./...
 
-test:
-	go test ./...
+lint:
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./...
+
+staticcheck:
+	go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
 build:
 	mkdir -p bin
 	go build -o bin/gtx ./cmd/gtx
 
+test:
+	go test ./...
+
+test-race:
+	go test -race ./...
+
 clean:
 	rm -rf bin/ coverage.out coverage.html
 
-ci:
-	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './vendor/*'))" || (echo "gofmt needed:" && gofmt -l $$(find . -name '*.go' -not -path './vendor/*') && exit 1)
-	go vet ./...
-	go test ./...
-
-all: tidy fmt vet test build
+all: mod-verify lint build test

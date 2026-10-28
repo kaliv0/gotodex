@@ -74,7 +74,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 	if err := e.setOut(); err != nil {
 		return err
 	}
-	defer e.out.Close()
+	defer func() { _ = e.out.Close() }()
 
 	if err := e.debug("processing:\n"); err != nil {
 		return err
@@ -196,7 +196,7 @@ func (e *Extractor) processFile(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	br := bufio.NewReader(f)
 	lineNo := 0

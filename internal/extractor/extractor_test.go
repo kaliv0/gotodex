@@ -471,7 +471,7 @@ func TestIsExcludedSkipsOutPath(t *testing.T) {
 	if err := ex.setOut(); err != nil {
 		t.Fatal(err)
 	}
-	defer ex.out.Close()
+	defer func() { _ = ex.out.Close() }()
 
 	if !ex.isExcluded(out, false) {
 		t.Fatal("want out path excluded (absolute compare)")
@@ -494,7 +494,7 @@ func TestIsExcludedStdoutHasNoOutSkip(t *testing.T) {
 	if err := ex.setOut(); err != nil {
 		t.Fatal(err)
 	}
-	defer ex.out.Close()
+	defer func() { _ = ex.out.Close() }()
 
 	if ex.isExcluded(todo, false) {
 		t.Fatal("stdout-only must not treat Opts.Out as a skip path")

@@ -9,16 +9,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Tidy
-        run: go mod tidy
+      - name: Verify modules
+        run: go mod verify
 
-      - name: Format check
-        run: make ci
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.13.2
+          args: --timeout=5m
+
+      - name: Build
+        run: go build -o bin/gtx ./cmd/gtx
+
+      - name: Test (race)
+        run: go test -race ./...
