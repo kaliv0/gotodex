@@ -17,7 +17,7 @@ import (
 )
 
 // Version is the CLI --version string.
-const Version = "0.1.0"
+const Version = "1.0.0"
 
 const banner = `
        ________________   ___/-\___     ___/-\___     ___/-\___
