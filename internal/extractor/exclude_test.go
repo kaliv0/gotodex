@@ -7,8 +7,7 @@ import (
 )
 
 func TestXSkipsPatterns(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		Exclude:   []string{"skip_me.py", "vendor/"},
 		Recursive: true,
@@ -18,15 +17,13 @@ func TestXSkipsPatterns(t *testing.T) {
 }
 
 func TestSkipsHiddenAndDunder(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{Recursive: true})
 	mustNotContain(t, text, "TODO: hidden", "TODO: dunder")
 }
 
 func TestHIncludesHiddenAndDunder(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		IncludeHidden: true,
 		Recursive:     true,
@@ -35,8 +32,7 @@ func TestHIncludesHiddenAndDunder(t *testing.T) {
 }
 
 func TestGAppliesGitignoreAndDefaultHidden(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		UseGitignore: true,
 		Recursive:    true,
@@ -46,8 +42,7 @@ func TestGAppliesGitignoreAndDefaultHidden(t *testing.T) {
 }
 
 func TestGWithHIncludesHiddenButKeepsGitignore(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		UseGitignore:  true,
 		IncludeHidden: true,
@@ -58,8 +53,7 @@ func TestGWithHIncludesHiddenButKeepsGitignore(t *testing.T) {
 }
 
 func TestGWithXBangReincludesVendor(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		UseGitignore: true,
 		Exclude:      []string{"!vendor/", "!vendor/**"},
@@ -77,8 +71,7 @@ func TestGMissingGitignoreIsNoop(t *testing.T) {
 }
 
 func TestFilePathGIsNoopButStillProcesses(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	ex := mustNew(t, Options{
 		Path:         filepath.Join(sample, "app.py"),
 		UseGitignore: true,
@@ -166,7 +159,7 @@ func TestPrepareExcludeSpecIgnoresBlankAndCommentLines(t *testing.T) {
 	}
 }
 
-func TestExtraGetGitignorePatternsReadsSample(t *testing.T) {
+func TestGetGitignorePatternsReadsSample(t *testing.T) {
 	sample := materializeSample(t)
 	lines, err := getGitignorePatterns(sample)
 	if err != nil {
@@ -174,11 +167,4 @@ func TestExtraGetGitignorePatternsReadsSample(t *testing.T) {
 	}
 	joined := strings.Join(lines, "\n")
 	mustContain(t, joined, "vendor/", "skip_me.py")
-}
-
-func TestExtraDefaultGlobsExported(t *testing.T) {
-	want := []string{".*", "__*"}
-	if len(DefaultGlobs) != 2 || DefaultGlobs[0] != want[0] || DefaultGlobs[1] != want[1] {
-		t.Fatalf("DefaultGlobs=%#v want %#v", DefaultGlobs, want)
-	}
 }

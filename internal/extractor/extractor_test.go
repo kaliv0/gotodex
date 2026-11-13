@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,16 +16,14 @@ import (
 const appOut = "======================\napp.py\n\tline 1: # TODO: main\n\tline 2: # FIXME: bug\n"
 
 func TestDefaultScan(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, filepath.Join(sample, "app.py"), out, Options{})
 	mustContain(t, text, "TODO: main", "FIXME: bug")
 	mustNotContain(t, text, "WARN: careful")
 }
 
 func TestTAddsTokenAndKeepsDefaults(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, filepath.Join(sample, "app.py"), out, Options{
 		Tokens: []string{"WARN"},
 	})
@@ -32,8 +31,7 @@ func TestTAddsTokenAndKeepsDefaults(t *testing.T) {
 }
 
 func TestIWithTUsesOnlyCustomTokens(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, filepath.Join(sample, "app.py"), out, Options{
 		Tokens:        []string{"WARN"},
 		IgnoreDefault: true,
@@ -43,8 +41,7 @@ func TestIWithTUsesOnlyCustomTokens(t *testing.T) {
 }
 
 func TestCustomTokensSmoke(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, filepath.Join(sample, "custom_tokens.py"), out, Options{
 		Tokens:        []string{"NOTE", "!!!URGENT!!!", "@FIXME", "中文标记"},
 		IgnoreDefault: true,
@@ -96,8 +93,7 @@ func TestSWritesToStdoutOnly(t *testing.T) {
 }
 
 func TestTeeWritesStdoutAndFile(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	var buf bytes.Buffer
 	ex := mustNew(t, Options{
 		Path:    filepath.Join(sample, "app.py"),
@@ -227,17 +223,7 @@ func TestOEqualsScannedFileTruncates(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "f.py")
 	mustWrite(t, src, "# TODO: will be truncated\n")
-	ex := mustNew(t, Options{Path: src, Out: src})
-	done := make(chan error, 1)
-	go func() { done <- ex.Run(context.Background()) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run hung; want eager truncate so Out==Path finishes empty")
-	}
+	mustRunWithin(t, mustNew(t, Options{Path: src, Out: src}), 3*time.Second)
 	if got := readFile(t, src); got != "" {
 		t.Fatalf("src=%q want empty", got)
 	}
@@ -256,45 +242,32 @@ func TestZeroHitScanTruncatesStaleOut(t *testing.T) {
 }
 
 func TestRFindsNested(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{Recursive: true})
 	mustContain(t, text, "TODO: deep", "TODO: deeper")
 }
 
-func TestMaxDepthZeroUsesDefault120(t *testing.T) {
+// MaxDepth 0/-1 => DefaultMaxDepth in New. Walk still finds deep hits.
+func TestMaxDepthNonPositiveUsesDefault120(t *testing.T) {
 	if DefaultMaxDepth != 120 {
 		t.Fatalf("DefaultMaxDepth=%d want 120", DefaultMaxDepth)
 	}
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
-	text := runToOut(t, sample, out, Options{Recursive: true, MaxDepth: 0})
-	mustContain(t, text, "TODO: deeper")
-}
-
-// New normalizes MaxDepth <= 0 to DefaultMaxDepth.
-func TestNewNormalizesNonPositiveMaxDepth(t *testing.T) {
-	dir := t.TempDir()
-	for _, d := range []int{0, -1} {
-		ex := mustNew(t, Options{Path: dir, MaxDepth: d})
-		if ex.opts.MaxDepth != DefaultMaxDepth {
-			t.Fatalf("after New(MaxDepth=%d): opts.MaxDepth=%d want %d",
-				d, ex.opts.MaxDepth, DefaultMaxDepth)
-		}
+	for _, depth := range []int{0, -1} {
+		t.Run(fmt.Sprintf("%d", depth), func(t *testing.T) {
+			sample, out := sampleWithOut(t)
+			ex := mustNew(t, Options{Path: sample, Out: out, Recursive: true, MaxDepth: depth})
+			if ex.opts.MaxDepth != DefaultMaxDepth {
+				t.Fatalf("after New(MaxDepth=%d): opts.MaxDepth=%d want %d",
+					depth, ex.opts.MaxDepth, DefaultMaxDepth)
+			}
+			mustRun(t, ex)
+			mustContain(t, readFile(t, out), "TODO: deeper")
+		})
 	}
 }
 
-// Library MaxDepth -1 => DefaultMaxDepth. CLI still rejects non-positive -m.
-func TestMaxDepthNegativeUsesDefault120(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
-	text := runToOut(t, sample, out, Options{Recursive: true, MaxDepth: -1})
-	mustContain(t, text, "TODO: deeper")
-}
-
 func TestRMLimitsDepth(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{
 		Recursive: true,
 		MaxDepth:  1,
@@ -304,8 +277,7 @@ func TestRMLimitsDepth(t *testing.T) {
 }
 
 func TestWithoutRSkipsNested(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "out.txt")
+	sample, out := sampleWithOut(t)
 	text := runToOut(t, sample, out, Options{})
 	mustNotContain(t, text, "TODO: deep", "TODO: deeper")
 	mustContain(t, text, "TODO: main")
@@ -374,7 +346,7 @@ func TestSymlinkPathRaises(t *testing.T) {
 	}
 }
 
-func TestExtraSymlinkDirNotFollowed(t *testing.T) {
+func TestSymlinkDirNotFollowed(t *testing.T) {
 	scan := t.TempDir()
 	outside := t.TempDir()
 	out := filepath.Join(scan, "out.txt")
@@ -388,7 +360,7 @@ func TestExtraSymlinkDirNotFollowed(t *testing.T) {
 	mustNotContain(t, text, "TODO: through-symlink")
 }
 
-func TestExtraSymlinkFileNotScanned(t *testing.T) {
+func TestSymlinkFileNotScanned(t *testing.T) {
 	scan := t.TempDir()
 	outside := t.TempDir()
 	out := filepath.Join(scan, "out.txt")
@@ -403,9 +375,8 @@ func TestExtraSymlinkFileNotScanned(t *testing.T) {
 }
 
 func TestFWritesAbsolutePath(t *testing.T) {
-	sample := materializeSample(t)
+	sample, out := sampleWithOut(t)
 	target := filepath.Join(sample, "app.py")
-	out := filepath.Join(sample, "out.txt")
 	text := runToOut(t, target, out, Options{FullPath: true})
 	abs, err := filepath.Abs(target)
 	if err != nil {
@@ -415,18 +386,36 @@ func TestFWritesAbsolutePath(t *testing.T) {
 }
 
 func TestDoesNotRescanOutputFile(t *testing.T) {
-	sample := materializeSample(t)
-	out := filepath.Join(sample, "TODO")
-	mustWrite(t, out, "======================\nstale.py\n\tline 1: # TODO: from previous run\n")
-	ex := mustNew(t, Options{
-		Path:      sample,
-		Out:       out,
-		Recursive: true,
-	})
-	mustRunWithin(t, ex, 2*time.Second)
-	text := readFile(t, out)
-	mustNotContain(t, text, "TODO: from previous run")
-	mustContain(t, text, "TODO: main")
+	const stale = "======================\nstale.py\n\tline 1: # TODO: from previous run\n"
+	cases := []struct {
+		name     string
+		relative bool
+	}{
+		{name: "absolute"},
+		{name: "relative", relative: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sample := materializeSample(t)
+			outAbs := filepath.Join(sample, "TODO")
+			mustWrite(t, outAbs, stale)
+
+			path, out := sample, outAbs
+			if tc.relative {
+				t.Chdir(sample)
+				path, out = ".", "TODO"
+			}
+			ex := mustNew(t, Options{
+				Path:      path,
+				Out:       out,
+				Recursive: true,
+			})
+			mustRunWithin(t, ex, 2*time.Second)
+			text := readFile(t, outAbs)
+			mustNotContain(t, text, "TODO: from previous run")
+			mustContain(t, text, "TODO: main")
+		})
+	}
 }
 
 func TestSkipsUndecodableFileAndContinues(t *testing.T) {
@@ -468,22 +457,6 @@ func TestDebugEmitsProcessingTrail(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("no skip expected; stderr=%q", stderr.String())
 	}
-}
-
-func TestDoesNotRescanOutputFileRelativeOut(t *testing.T) {
-	sample := materializeSample(t)
-	t.Chdir(sample)
-	mustWrite(t, filepath.Join(sample, "TODO"),
-		"======================\nstale.py\n\tline 1: # TODO: from previous run\n")
-	ex := mustNew(t, Options{
-		Path:      ".",
-		Out:       "TODO",
-		Recursive: true,
-	})
-	mustRunWithin(t, ex, 2*time.Second)
-	text := readFile(t, filepath.Join(sample, "TODO"))
-	mustNotContain(t, text, "TODO: from previous run")
-	mustContain(t, text, "TODO: main")
 }
 
 func TestSkipsUndecodableMidFileKeepsPriorHits(t *testing.T) {
@@ -675,6 +648,13 @@ func materializeSample(t *testing.T) string {
 	return dst
 }
 
+func sampleWithOut(t *testing.T) (sample, out string) {
+	t.Helper()
+	sample = materializeSample(t)
+	out = filepath.Join(sample, "out.txt")
+	return sample, out
+}
+
 func mustWrite(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -728,6 +708,6 @@ func mustRunWithin(t *testing.T, ex *Extractor, d time.Duration) {
 			t.Fatalf("Run: %v", err)
 		}
 	case <-time.After(d):
-		t.Fatalf("Run hung after %s — likely missing out-path skip (scanning out file feeds itself)", d)
+		t.Fatalf("Run hung after %s", d)
 	}
 }

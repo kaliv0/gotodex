@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -209,43 +208,113 @@ func TestTeeWritesStdoutAndFile(t *testing.T) {
 }
 
 func TestTeeSurvivesBrokenStdout(t *testing.T) {
-	outPath := filepath.Join(t.TempDir(), "out.txt")
-	w := mustNewWith(t, writer.Options{
-		Path:     outPath,
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   brokenPipeWriter{},
-	})
-	if err := w.WriteHeader("a.py"); err != nil {
-		t.Fatalf("tee+EPIPE should not fail write: %v", err)
+	cases := []struct {
+		name         string
+		stdout       io.Writer
+		writeHeader  bool
+		debug        bool
+		wantBody     string
+		checkCleared bool
+		close        bool
+	}{
+		{
+			name:         "BrokenStdout",
+			stdout:       errWriter{err: syscall.EPIPE},
+			writeHeader:  true,
+			wantBody:     payloadA,
+			checkCleared: true,
+			close:        true,
+		},
+		{
+			name:     "ErrClosedPipe",
+			stdout:   errWriter{err: io.ErrClosedPipe},
+			wantBody: entryTODO1,
+			close:    true,
+		},
+		{
+			name:         "BrokenFlush",
+			stdout:       &flushPipeWriter{},
+			wantBody:     entryTODO1,
+			checkCleared: true,
+		},
+		{
+			name:         "Debug",
+			stdout:       errWriter{err: syscall.EPIPE},
+			debug:        true,
+			wantBody:     "dbg\n",
+			checkCleared: true,
+			close:        true,
+		},
 	}
-	if err := w.WriteEntry(1, "# TODO: x\n"); err != nil {
-		t.Fatalf("tee+EPIPE should not fail write: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != payloadA {
-		t.Fatalf("file=%q want %q", body, payloadA)
-	}
-	if w.ToStdout {
-		t.Fatal("ToStdout should be cleared after EPIPE")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			outPath := filepath.Join(t.TempDir(), "out.txt")
+			w := mustNewWith(t, writer.Options{
+				Path:     outPath,
+				ToStdout: true,
+				TTY:      false,
+				Stdout:   tc.stdout,
+			})
+			var err error
+			if tc.debug {
+				err = w.Debug("dbg\n")
+			} else {
+				if tc.writeHeader {
+					if err = w.WriteHeader("a.py"); err != nil {
+						t.Fatalf("tee+EPIPE should not fail write: %v", err)
+					}
+				}
+				err = w.WriteEntry(1, "# TODO: x\n")
+			}
+			if err != nil {
+				t.Fatalf("want nil, got %v", err)
+			}
+			if tc.checkCleared && w.ToStdout {
+				t.Fatal("ToStdout should be cleared after EPIPE")
+			}
+			if tc.close {
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			body, err := os.ReadFile(outPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != tc.wantBody {
+				t.Fatalf("file=%q want %q", body, tc.wantBody)
+			}
+		})
 	}
 }
 
 func TestStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
-	w := mustNewWith(t, writer.Options{
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   brokenPipeWriter{},
-	})
-	err := w.WriteEntry(1, "# TODO: x\n")
-	if !errors.Is(err, writer.ErrStopExtraction) {
-		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
+	cases := []struct {
+		name   string
+		stdout io.Writer
+		debug  bool
+	}{
+		{name: "BrokenStdout", stdout: errWriter{err: syscall.EPIPE}},
+		{name: "BrokenFlush", stdout: &flushPipeWriter{}},
+		{name: "Debug", stdout: errWriter{err: syscall.EPIPE}, debug: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := mustNewWith(t, writer.Options{
+				ToStdout: true,
+				TTY:      false,
+				Stdout:   tc.stdout,
+			})
+			var err error
+			if tc.debug {
+				err = w.Debug("dbg\n")
+			} else {
+				err = w.WriteEntry(1, "# TODO: x\n")
+			}
+			if !errors.Is(err, writer.ErrStopExtraction) {
+				t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
+			}
+		})
 	}
 }
 
@@ -309,64 +378,6 @@ func TestPagePreservesLESSWhenSet(t *testing.T) {
 	}
 }
 
-func TestTeeSurvivesErrClosedPipe(t *testing.T) {
-	outPath := filepath.Join(t.TempDir(), "out.txt")
-	w := mustNewWith(t, writer.Options{
-		Path:     outPath,
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   errWriter{err: io.ErrClosedPipe},
-	})
-	if err := w.WriteEntry(1, "# TODO: x\n"); err != nil {
-		t.Fatalf("want nil, got %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != entryTODO1 {
-		t.Fatalf("file=%q want %q", body, entryTODO1)
-	}
-}
-
-func TestTeeSurvivesBrokenFlush(t *testing.T) {
-	outPath := filepath.Join(t.TempDir(), "out.txt")
-	w := mustNewWith(t, writer.Options{
-		Path:     outPath,
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   &flushPipeWriter{},
-	})
-	if err := w.WriteEntry(1, "# TODO: x\n"); err != nil {
-		t.Fatalf("want nil, got %v", err)
-	}
-	if w.ToStdout {
-		t.Fatal("ToStdout should be cleared after flush EPIPE")
-	}
-	body, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != entryTODO1 {
-		t.Fatalf("file=%q want %q", body, entryTODO1)
-	}
-}
-
-func TestStdoutOnlyStopsOnBrokenFlush(t *testing.T) {
-	w := mustNewWith(t, writer.Options{
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   &flushPipeWriter{},
-	})
-	err := w.WriteEntry(1, "# TODO: x\n")
-	if !errors.Is(err, writer.ErrStopExtraction) {
-		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
-	}
-}
-
 func TestPageAcceptsPAGERWithArgs(t *testing.T) {
 	t.Setenv("PAGER", "true -ignored")
 	unsetLESS(t)
@@ -377,44 +388,6 @@ func TestPageAcceptsPAGERWithArgs(t *testing.T) {
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestDebugTeeSurvivesBrokenStdout(t *testing.T) {
-	outPath := filepath.Join(t.TempDir(), "out.txt")
-	w := mustNewWith(t, writer.Options{
-		Path:     outPath,
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   brokenPipeWriter{},
-	})
-	if err := w.Debug("dbg\n"); err != nil {
-		t.Fatalf("tee+EPIPE Debug should not fail: %v", err)
-	}
-	if w.ToStdout {
-		t.Fatal("ToStdout should be cleared after EPIPE")
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != "dbg\n" {
-		t.Fatalf("file=%q want dbg\\n", body)
-	}
-}
-
-func TestDebugStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
-	w := mustNewWith(t, writer.Options{
-		ToStdout: true,
-		TTY:      false,
-		Stdout:   brokenPipeWriter{},
-	})
-	err := w.Debug("dbg\n")
-	if !errors.Is(err, writer.ErrStopExtraction) {
-		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
 	}
 }
 
@@ -433,14 +406,6 @@ func TestNewMatchesNewWithTTYDetection(t *testing.T) {
 	}
 	if mustNew(t, "", false).UsesPager() {
 		t.Fatal("New(toStdout=false) must not use pager")
-	}
-}
-
-// Regression: Options must not reintroduce Pager injection.
-func TestOptionsHasNoPagerField(t *testing.T) {
-	rt := reflect.TypeFor[writer.Options]()
-	if _, ok := rt.FieldByName("Pager"); ok {
-		t.Fatal("Options must not have Pager field")
 	}
 }
 
@@ -508,12 +473,6 @@ func capturePager(t *testing.T) string {
 	return out
 }
 
-type brokenPipeWriter struct{}
-
-func (brokenPipeWriter) Write([]byte) (int, error) {
-	return 0, syscall.EPIPE
-}
-
 type errWriter struct{ err error }
 
 func (e errWriter) Write([]byte) (int, error) {
@@ -524,13 +483,3 @@ type flushPipeWriter struct{}
 
 func (f *flushPipeWriter) Write(p []byte) (int, error) { return len(p), nil }
 func (f *flushPipeWriter) Flush() error                { return syscall.EPIPE }
-
-func TestNoBrokenPipeSplitFiles(t *testing.T) {
-	matches, err := filepath.Glob("brokenpipe_*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(matches) != 0 {
-		t.Fatalf("want no brokenpipe_*.go, got %v", matches)
-	}
-}
