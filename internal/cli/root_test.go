@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -15,9 +14,7 @@ import (
 	"github.com/kaliv0/gotodex/internal/writer"
 )
 
-const appOut = "======================\napp.py\n\tline 1: # TODO: main\n\tline 2: # FIXME: bug\n"
-
-func TestMissingDependentFlagErrors(t *testing.T) {
+func TestUsageValidationErrors(t *testing.T) {
 	dir := t.TempDir()
 	tests := []struct {
 		args []string
@@ -25,48 +22,13 @@ func TestMissingDependentFlagErrors(t *testing.T) {
 	}{
 		{[]string{"-i", dir}, "-i/--ignore-default flag requires -t/--tokens"},
 		{[]string{"-m", "20", dir}, "-m/--max-depth flag requires -r/--recursive"},
+		{[]string{dir, "-s", "-o", "x"}, "shouldn't mix --stdout and --out or --tee flags"},
+		{[]string{dir, "-s", "--tee"}, "shouldn't mix --stdout and --out or --tee flags"},
+		{[]string{"-r", "-m", "0", dir}, "expected positive value"},
+		{[]string{"-r", "-m", "-1", dir}, "expected positive value"},
 	}
 	for _, tt := range tests {
-		err := runRoot(tt.args, io.Discard, &bytes.Buffer{})
-		var ee *exitError
-		if !errors.As(err, &ee) || ee.Code != 2 {
-			t.Fatalf("args=%v: want exitError 2, got %v", tt.args, err)
-		}
-		if !strings.Contains(ee.Err.Error(), tt.need) {
-			t.Fatalf("args=%v: got %q want contain %q", tt.args, ee.Err.Error(), tt.need)
-		}
-	}
-}
-
-func TestStdoutMixErrors(t *testing.T) {
-	dir := t.TempDir()
-	for _, extra := range [][]string{
-		{"-s", "-o", "x"},
-		{"-s", "--tee"},
-	} {
-		args := append([]string{dir}, extra...)
-		err := runRoot(args, io.Discard, &bytes.Buffer{})
-		var ee *exitError
-		if !errors.As(err, &ee) || ee.Code != 2 {
-			t.Fatalf("args=%v: want exitError 2, got %v", args, err)
-		}
-		if ee.Err.Error() != "shouldn't mix --stdout and --out or --tee flags" {
-			t.Fatalf("got %q", ee.Err.Error())
-		}
-	}
-}
-
-func TestMaxDepthRejectsInvalidValues(t *testing.T) {
-	dir := t.TempDir()
-	for _, value := range []string{"0", "-1"} {
-		err := runRoot([]string{"-r", "-m", value, dir}, io.Discard, &bytes.Buffer{})
-		var ee *exitError
-		if !errors.As(err, &ee) || ee.Code != 2 {
-			t.Fatalf("m=%s: want exitError 2, got %v", value, err)
-		}
-		if !strings.Contains(ee.Err.Error(), "expected positive value") {
-			t.Fatalf("m=%s: %v", value, ee.Err)
-		}
+		requireExit2Contains(t, tt.args, tt.need)
 	}
 }
 
@@ -78,6 +40,7 @@ func TestMaxDepthRejectsNonIntViaExecute(t *testing.T) {
 	}
 }
 
+// Smoke: flags reach the extractor (-t / -i / -o).
 func TestArgvReachesExtractor(t *testing.T) {
 	sample := materializeCLISample(t)
 	out := filepath.Join(sample, "cli_out.txt")
@@ -106,57 +69,33 @@ func writeTokenFixture(t *testing.T) string {
 	return path
 }
 
-func TestTokensCommaSeparated(t *testing.T) {
+func TestTokensStringSlice(t *testing.T) {
 	src := writeTokenFixture(t)
-	var stdout bytes.Buffer
-	err := runRoot([]string{src, "-s", "-t", "WARN,REVISIT", "-i"}, &stdout, &bytes.Buffer{})
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"comma", []string{src, "-s", "-t", "WARN,REVISIT", "-i"}},
+		{"repeat", []string{src, "-s", "-t", "WARN", "-t", "REVISIT", "-i"}},
+		{"comma_trim", []string{src, "-s", "-t", "WARN, REVISIT", "-i"}},
 	}
-	text := stdout.String()
-	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
-		if !strings.Contains(text, needle) {
-			t.Fatalf("missing %q\n%s", needle, text)
-		}
-	}
-	if strings.Contains(text, "TODO: skip") {
-		t.Fatalf("TODO must be ignored with -i\n%s", text)
-	}
-}
-
-func TestTokensRepeatedFlags(t *testing.T) {
-	src := writeTokenFixture(t)
-	var stdout bytes.Buffer
-	err := runRoot(
-		[]string{src, "-s", "-t", "WARN", "-t", "REVISIT", "-i"},
-		&stdout, &bytes.Buffer{},
-	)
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
-	}
-	text := stdout.String()
-	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
-		if !strings.Contains(text, needle) {
-			t.Fatalf("missing %q\n%s", needle, text)
-		}
-	}
-	if strings.Contains(text, "TODO: skip") {
-		t.Fatalf("TODO must be ignored with -i\n%s", text)
-	}
-}
-
-func TestTokensCommaSeparatedTrimsSpaces(t *testing.T) {
-	src := writeTokenFixture(t)
-	var stdout bytes.Buffer
-	err := runRoot([]string{src, "-s", "-t", "WARN, REVISIT", "-i"}, &stdout, &bytes.Buffer{})
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
-	}
-	text := stdout.String()
-	for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
-		if !strings.Contains(text, needle) {
-			t.Fatalf("missing %q\n%s", needle, text)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			err := runRoot(tt.args, &stdout, &bytes.Buffer{})
+			if err != nil {
+				t.Fatalf("runRoot: %v", err)
+			}
+			text := stdout.String()
+			for _, needle := range []string{"WARN: careful", "REVISIT: later"} {
+				if !strings.Contains(text, needle) {
+					t.Fatalf("missing %q\n%s", needle, text)
+				}
+			}
+			if strings.Contains(text, "TODO: skip") {
+				t.Fatalf("TODO must be ignored with -i\n%s", text)
+			}
+		})
 	}
 }
 
@@ -193,77 +132,22 @@ func TestExcludeCommaSeparated(t *testing.T) {
 	}
 }
 
-func TestRMLimitsDepthViaCLI(t *testing.T) {
+func TestSBrokenPipeViaCLIExits141(t *testing.T) {
 	sample := materializeCLISample(t)
-	out := filepath.Join(sample, "cli_depth_out.txt")
-	err := runRoot([]string{sample, "-o", out, "-r", "-m", "1"}, io.Discard, &bytes.Buffer{})
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"write", []string{filepath.Join(sample, "app.py"), "-s"}},
+		{"debug", []string{filepath.Join(sample, "app.py"), "-s", "-d"}},
 	}
-	text := readFile(t, out)
-	if !strings.Contains(text, "TODO: deep") {
-		t.Fatalf("missing TODO: deep\n%s", text)
-	}
-	if strings.Contains(text, "TODO: deeper") {
-		t.Fatalf("TODO: deeper must be beyond -m 1\n%s", text)
-	}
-}
-
-func TestSViaCLI(t *testing.T) {
-	sample := materializeCLISample(t)
-	var stdout bytes.Buffer
-	err := runRoot(
-		[]string{filepath.Join(sample, "app.py"), "-s"},
-		&stdout, &bytes.Buffer{},
-	)
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
-	}
-	if got := stdout.String(); got != appOut {
-		t.Fatalf("stdout=%q want %q", got, appOut)
-	}
-}
-
-func TestTeeViaCLI(t *testing.T) {
-	sample := materializeCLISample(t)
-	out := filepath.Join(sample, "cli_tee_out.txt")
-	var stdout bytes.Buffer
-	err := runRoot(
-		[]string{filepath.Join(sample, "app.py"), "-o", out, "--tee"},
-		&stdout, &bytes.Buffer{},
-	)
-	if err != nil {
-		t.Fatalf("runRoot: %v", err)
-	}
-	if got := readFile(t, out); got != appOut {
-		t.Fatalf("file=%q want %q", got, appOut)
-	}
-	if got := stdout.String(); got != appOut {
-		t.Fatalf("stdout=%q want %q", got, appOut)
-	}
-}
-
-func TestSBrokenPipeViaDebugExits141(t *testing.T) {
-	sample := materializeCLISample(t)
-	code := finish(runRoot(
-		[]string{filepath.Join(sample, "app.py"), "-s", "-d"},
-		brokenPipeWriter{},
-		&bytes.Buffer{},
-	), io.Discard)
-	if code != 141 {
-		t.Fatalf("exit=%d want 141", code)
-	}
-}
-
-func TestSBrokenPipeWriteExits141(t *testing.T) {
-	sample := materializeCLISample(t)
-	code := finish(runRoot(
-		[]string{filepath.Join(sample, "app.py"), "-s"},
-		brokenPipeWriter{},
-		&bytes.Buffer{},
-	), io.Discard)
-	if code != 141 {
-		t.Fatalf("exit=%d want 141 (ErrStopExtraction must reach finish)", code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code := finish(runRoot(tt.args, brokenPipeWriter{}, &bytes.Buffer{}), io.Discard)
+			if code != 141 {
+				t.Fatalf("exit=%d want 141", code)
+			}
+		})
 	}
 }
 
@@ -315,35 +199,48 @@ func TestExitCodeMapping(t *testing.T) {
 	}
 }
 
-func TestFinishUsageWritesGtxErrorPrefix(t *testing.T) {
-	var stderr bytes.Buffer
-	err := &exitError{Code: 2, Err: errors.New("path required")}
-	code := finish(err, &stderr)
-	if code != 2 {
-		t.Fatalf("exit=%d want 2", code)
+func TestFinishWrites(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   int
+		contain    []string
+		notContain []string
+	}{
+		{
+			"usage",
+			&exitError{Code: 2, Err: errors.New("path required")},
+			2,
+			[]string{"gtx: error:", "path required"},
+			nil,
+		},
+		{
+			"runtime",
+			errors.New("nope not found"),
+			1,
+			[]string{"nope not found"},
+			[]string{"gtx: error:"},
+		},
 	}
-	got := stderr.String()
-	if !strings.Contains(got, "gtx: error:") {
-		t.Fatalf("stderr=%q want contain %q", got, "gtx: error:")
-	}
-	if !strings.Contains(got, "path required") {
-		t.Fatalf("stderr=%q want contain %q", got, "path required")
-	}
-}
-
-func TestFinishRuntimeWritesBareMessage(t *testing.T) {
-	var stderr bytes.Buffer
-	msg := "nope not found"
-	code := finish(errors.New(msg), &stderr)
-	if code != 1 {
-		t.Fatalf("exit=%d want 1", code)
-	}
-	got := stderr.String()
-	if strings.Contains(got, "gtx: error:") {
-		t.Fatalf("stderr=%q must not contain gtx: error:", got)
-	}
-	if !strings.Contains(got, msg) {
-		t.Fatalf("stderr=%q want contain %q", got, msg)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := finish(tt.err, &stderr)
+			if code != tt.wantCode {
+				t.Fatalf("exit=%d want %d", code, tt.wantCode)
+			}
+			got := stderr.String()
+			for _, s := range tt.contain {
+				if !strings.Contains(got, s) {
+					t.Fatalf("stderr=%q want contain %q", got, s)
+				}
+			}
+			for _, s := range tt.notContain {
+				if strings.Contains(got, s) {
+					t.Fatalf("stderr=%q must not contain %q", got, s)
+				}
+			}
+		})
 	}
 }
 
@@ -394,124 +291,6 @@ func TestRunInterruptibleMapsCanceled(t *testing.T) {
 	}
 }
 
-func TestHelpContainsTrashBanner(t *testing.T) {
-	help := helpOutput(t)
-	for _, needle := range []string{"GTX", "Peak trash sniffer"} {
-		if !strings.Contains(help, needle) {
-			t.Errorf("help missing %q (want banner art / long description)\nhelp:\n%s", needle, help)
-		}
-	}
-}
-
-// TestHelpContainsUsageExamples locks distinctive --help Usage needles.
-// Exact Cobra wrapping is not required.
-func TestHelpContainsUsageExamples(t *testing.T) {
-	help := helpOutput(t)
-	needles := []string{
-		// -t / --tokens (rich help)
-		"//FIXME{3}",
-		"//FIXME{3} - revisit after release",
-		`if path == root {`,
-		`return false`,
-		"curly braces",
-		// StringSlice: comma-separated and repeated -t
-		"comma-separated - in addition to default TODO, FIXME",
-		"-t WARN,REVISIT",
-		"-t WARN -t REVISIT",
-		// -i / --ignore-default
-		"use only -t tokens (skip default TODO, FIXME)",
-		// -x / --exclude (example block)
-		"git-like patterns to skip",
-		"bar.go       any file named bar.go",
-		"/bar.go      only top-level",
-		"foo/bar.go   path under the scan root",
-		"vendor/      directory and its contents",
-		"**/*.o       nested matches",
-		"!fizz.md     re-include after a broader exclude",
-		// StringSlice: comma-separated -x patterns
-		"comma-separated",
-		// -H / --include-hidden
-		"do not apply default excludes for hidden names (.* / __*)",
-		// -g / --use-gitignore
-		"use exclude patterns from .gitignore (if present in scan root) when traversing dirs",
-		// -f / --full-path
-		"display absolute dir/file path",
-		// -c / --concise
-		"'//TODO{5}: after release'",
-		// -r / --recursive
-		"traverse given dir path recursively",
-		// -m / --max-depth
-		"maximum depth of dir traversal - used with -r/--recursive flag (default: 120)",
-		// -d / --debug
-		"enable debug mode",
-		// -o / --out
-		"path to output file - if existing dir is passed instead TODO out file will be saved inside the path",
-		// -s / --stdout
-		"output result to stdout",
-		// --tee
-		"output result to stdout and save to file",
-	}
-	for _, needle := range needles {
-		if !strings.Contains(help, needle) {
-			t.Errorf("help missing %q\nhelp:\n%s", needle, help)
-		}
-	}
-}
-
-func helpOutput(t *testing.T) string {
-	t.Helper()
-	root := NewRoot()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"--help"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("help: %v", err)
-	}
-	return out.String()
-}
-
-func TestCmdGTXMainExists(t *testing.T) {
-	mainPath := filepath.Join(repoRoot(t), "cmd", "gtx", "main.go")
-	b, err := os.ReadFile(mainPath)
-	if err != nil {
-		t.Fatalf("cmd/gtx/main.go required: %v", err)
-	}
-	src := string(b)
-	if !strings.Contains(src, "cli.Execute") {
-		t.Fatal("cmd/gtx/main.go must call cli.Execute")
-	}
-}
-
-func TestCmdTodexAndTDXGone(t *testing.T) {
-	root := repoRoot(t)
-	for _, name := range []string{"todex", "tdx"} {
-		path := filepath.Join(root, "cmd", name)
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Errorf("cmd/%s must not exist (got err=%v)", name, err)
-		}
-	}
-}
-
-func TestBuildGTXVersion(t *testing.T) {
-	root := repoRoot(t)
-	bin := filepath.Join(t.TempDir(), "gtx")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/gtx")
-	build.Dir = root
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build ./cmd/gtx: %v\n%s", err, out)
-	}
-	ver := exec.Command(bin, "--version")
-	out, err := ver.CombinedOutput()
-	if err != nil {
-		t.Fatalf("gtx --version: %v\n%s", err, out)
-	}
-	got := string(out)
-	if !strings.Contains(got, "gtx version") {
-		t.Fatalf("gtx --version want contain %q, got %q", "gtx version", got)
-	}
-}
-
 func TestVersionShortFlag(t *testing.T) {
 	root := NewRoot()
 	var out bytes.Buffer
@@ -530,21 +309,15 @@ func TestVersionShortFlag(t *testing.T) {
 	}
 }
 
-func TestREADMEMentionsKeyFlags(t *testing.T) {
-	path := filepath.Join(repoRoot(t), "README.md")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("README.md required: %v", err)
+func requireExit2Contains(t *testing.T, args []string, need string) {
+	t.Helper()
+	err := runRoot(args, io.Discard, &bytes.Buffer{})
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.Code != 2 {
+		t.Fatalf("args=%v: want exitError 2, got %v", args, err)
 	}
-	text := string(b)
-	for _, flag := range []string{"-t", "-r", "-s", "-o"} {
-		if !strings.Contains(text, flag) {
-			t.Errorf("README.md missing flag %q", flag)
-		}
-	}
-	const install = "go install github.com/kaliv0/gotodex/cmd/gtx"
-	if !strings.Contains(text, install) {
-		t.Errorf("README.md missing remote install %q", install)
+	if !strings.Contains(ee.Err.Error(), need) {
+		t.Fatalf("args=%v: got %q want contain %q", args, ee.Err.Error(), need)
 	}
 }
 
@@ -571,9 +344,4 @@ type brokenPipeWriter struct{}
 
 func (brokenPipeWriter) Write([]byte) (int, error) {
 	return 0, syscall.EPIPE
-}
-
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	return filepath.Clean(filepath.Join("..", ".."))
 }

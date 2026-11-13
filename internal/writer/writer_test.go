@@ -438,7 +438,7 @@ func TestNewMatchesNewWithTTYDetection(t *testing.T) {
 
 // Regression: Options must not reintroduce Pager injection.
 func TestOptionsHasNoPagerField(t *testing.T) {
-	rt := reflect.TypeOf(writer.Options{})
+	rt := reflect.TypeFor[writer.Options]()
 	if _, ok := rt.FieldByName("Pager"); ok {
 		t.Fatal("Options must not have Pager field")
 	}
