@@ -40,28 +40,6 @@ const banner = `
             ` + shortDesc + `
 `
 
-// tokensHelp is -t/--tokens Usage.
-const tokensHelp = `tokens to search (comma-separated - in addition to default TODO, FIXME) e.g. -t WARN,REVISIT or -t WARN -t REVISIT.
-If the token is followed by {lines-count} e.g. //FIXME{3}
-the extractor will include multiline snippet with the length specified between the curly braces:
-
-    //FIXME{3} - revisit after release
-    if path == root {
-        return false
-    }
-`
-
-// excludeHelp is -x/--exclude Usage.
-const excludeHelp = `git-like patterns to skip (comma-separated paths, names, or globs - combined with default .* / __*), e.g.
-
-    bar.go       any file named bar.go
-    /bar.go      only top-level
-    foo/bar.go   path under the scan root
-    vendor/      directory and its contents
-    **/*.o       nested matches
-    !fizz.md     re-include after a broader exclude
-`
-
 var errInterrupted = errors.New("interrupted")
 
 type flagBundle struct {
@@ -132,9 +110,25 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&f.tokens, "tokens", "t", nil, tokensHelp)
+	cmd.Flags().StringSliceVarP(&f.tokens, "tokens", "t", nil, `tokens to search (comma-separated - in addition to default TODO, FIXME) e.g. -t WARN,REVISIT or -t WARN -t REVISIT.
+If the token is followed by {lines-count} e.g. //FIXME{3}
+the extractor will include multiline snippet with the length specified between the curly braces:
+
+    //FIXME{3} - revisit after release
+    if path == root {
+        return false
+    }
+`)
 	cmd.Flags().BoolVarP(&f.ignoreDefault, "ignore-default", "i", false, "use only -t tokens (skip default TODO, FIXME)")
-	cmd.Flags().StringSliceVarP(&f.exclude, "exclude", "x", nil, excludeHelp)
+	cmd.Flags().StringSliceVarP(&f.exclude, "exclude", "x", nil, `git-like patterns to skip (comma-separated paths, names, or globs - combined with default .* / __*), e.g.
+
+    bar.go       any file named bar.go
+    /bar.go      only top-level
+    foo/bar.go   path under the scan root
+    vendor/      directory and its contents
+    **/*.o       nested matches
+    !fizz.md     re-include after a broader exclude
+`)
 	cmd.Flags().BoolVarP(&f.includeHidden, "include-hidden", "H", false, "do not apply default excludes for hidden names (.* / __*)")
 	cmd.Flags().BoolVarP(&f.useGitignore, "use-gitignore", "g", false, "use exclude patterns from .gitignore (if present in scan root) when traversing dirs")
 	cmd.Flags().BoolVarP(&f.fullPath, "full-path", "f", false, "display absolute dir/file path")
