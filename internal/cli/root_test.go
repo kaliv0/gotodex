@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"gotodex/internal/writer"
+	"github.com/kaliv0/gotodex/internal/writer"
 )
 
 const appOut = "======================\napp.py\n\tline 1: # TODO: main\n\tline 2: # FIXME: bug\n"
@@ -448,7 +448,7 @@ func TestBuildGTXVersion(t *testing.T) {
 	}
 	got := string(out)
 	if !strings.Contains(got, "gtx version") {
-		t.Fatalf("gtx --version want %q, got %q", "gtx version", got)
+		t.Fatalf("gtx --version want contain %q, got %q", "gtx version", got)
 	}
 }
 
@@ -465,6 +465,9 @@ func TestVersionShortFlag(t *testing.T) {
 	if !strings.Contains(got, "gtx version") {
 		t.Fatalf("gtx -v want contain %q, got %q", "gtx version", got)
 	}
+	if !strings.Contains(got, "0.1.0") {
+		t.Fatalf("gtx -v want contain default %q, got %q", "0.1.0", got)
+	}
 }
 
 func TestREADMEMentionsKeyFlags(t *testing.T) {
@@ -478,6 +481,10 @@ func TestREADMEMentionsKeyFlags(t *testing.T) {
 		if !strings.Contains(text, flag) {
 			t.Errorf("README.md missing flag %q", flag)
 		}
+	}
+	const install = "go install github.com/kaliv0/gotodex/cmd/gtx"
+	if !strings.Contains(text, install) {
+		t.Errorf("README.md missing remote install %q", install)
 	}
 }
 

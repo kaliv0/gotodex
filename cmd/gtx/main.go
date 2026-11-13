@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"gotodex/internal/cli"
+	"github.com/kaliv0/gotodex/internal/cli"
 )
 
 func main() {

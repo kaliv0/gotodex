@@ -1,4 +1,4 @@
-module gotodex
+module github.com/kaliv0/gotodex
 
 go 1.27.0
 

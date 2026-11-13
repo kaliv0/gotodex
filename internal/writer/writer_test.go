@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"gotodex/internal/writer"
+	"github.com/kaliv0/gotodex/internal/writer"
 )
 
 const (

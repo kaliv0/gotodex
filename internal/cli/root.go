@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gotodex/internal/extractor"
-	"gotodex/internal/writer"
+	"github.com/kaliv0/gotodex/internal/extractor"
+	"github.com/kaliv0/gotodex/internal/writer"
 )
 
 // Version is the CLI --version string.

@@ -7,7 +7,7 @@
 Peak trash sniffer and TODO extractor
 
 ```bash
-go install ./cmd/gtx
+go install github.com/kaliv0/gotodex/cmd/gtx@latest
 # or: make build -> bin/gtx
 
 gtx <PATH> [OPTIONS...]

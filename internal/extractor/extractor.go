@@ -16,7 +16,7 @@ import (
 
 	ignore "github.com/sabhiram/go-gitignore"
 
-	"gotodex/internal/writer"
+	"github.com/kaliv0/gotodex/internal/writer"
 )
 
 // Extractor scans PATH for tokens and writes results.
