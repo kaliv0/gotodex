@@ -525,8 +525,8 @@ func TestVersionShortFlag(t *testing.T) {
 	if !strings.Contains(got, "gtx version") {
 		t.Fatalf("gtx -v want contain %q, got %q", "gtx version", got)
 	}
-	if !strings.Contains(got, "0.1.0") {
-		t.Fatalf("gtx -v want contain default %q, got %q", "0.1.0", got)
+	if !strings.Contains(got, Version) {
+		t.Fatalf("gtx -v want contain %q, got %q", Version, got)
 	}
 }
 
