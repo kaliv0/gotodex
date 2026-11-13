@@ -1,5 +1,6 @@
 //go:build unix
 
+// Package main is the gtx CLI entrypoint.
 package main
 
 import (

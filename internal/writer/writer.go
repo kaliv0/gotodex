@@ -1,3 +1,4 @@
+// Package writer writes extract hits to a file and/or stdout.
 package writer
 
 import (
@@ -8,16 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 )
 
-// StopExtraction signals early stop (e.g. broken pipe on stdout-only).
-type StopExtraction struct{}
-
-func (StopExtraction) Error() string { return "stop extraction" }
+// ErrStopExtraction signals early stop (e.g. broken pipe on stdout-only).
+var ErrStopExtraction = errors.New("stop extraction")
 
 // Writer writes extract output to a file and/or stdout.
+// Callers must be single-threaded (extractor walk).
 type Writer struct {
 	stdout   io.Writer
 	stderr   io.Writer
@@ -25,7 +24,6 @@ type Writer struct {
 	pager    func(string) // nil => default page()
 	pagerBuf *bytes.Buffer
 	Path     string // empty => no file
-	mu       sync.Mutex
 	ToStdout bool
 }
 
@@ -68,7 +66,7 @@ func NewWith(opts Options) (*Writer, error) {
 	if opts.Path != "" {
 		f, err := os.Create(opts.Path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("create %s: %w", opts.Path, err)
 		}
 		w.file = f
 	}
@@ -85,14 +83,17 @@ func (w *Writer) UsesPager() bool {
 	return w.pagerBuf != nil
 }
 
+// WriteHeader writes the path banner for a hit file.
 func (w *Writer) WriteHeader(path string) error {
 	return w.write(fmt.Sprintf("======================\n%s\n", path))
 }
 
+// WriteEntry writes one hit line with its line number.
 func (w *Writer) WriteEntry(lineNum int, line string) error {
 	return w.write(fmt.Sprintf("\tline %d: %s", lineNum, line))
 }
 
+// Debug writes a debug line to the configured outputs.
 func (w *Writer) Debug(text string) error {
 	return w.write(text)
 }
@@ -107,7 +108,7 @@ func (w *Writer) Error(text string) error {
 }
 
 // write sends to stdout and/or file.
-// Stdout-only EPIPE => StopExtraction. Tee EPIPE => disable stdout, keep file.
+// Stdout-only EPIPE => ErrStopExtraction. Tee EPIPE => disable stdout, keep file.
 func (w *Writer) write(text string) error {
 	if w.ToStdout {
 		if err := w.writeStdout(text); err != nil {
@@ -116,7 +117,7 @@ func (w *Writer) write(text string) error {
 			}
 			w.disableStdout()
 			if w.Path == "" {
-				return StopExtraction{}
+				return ErrStopExtraction
 			}
 		}
 	}
@@ -130,8 +131,6 @@ func (w *Writer) disableStdout() {
 }
 
 func (w *Writer) writeFile(text string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.file == nil {
 		return nil
 	}
@@ -154,6 +153,7 @@ func (w *Writer) writeStdout(text string) error {
 	return nil
 }
 
+// Close runs the pager if needed and closes the output file.
 func (w *Writer) Close() error {
 	if w.UsesPager() {
 		fn := page
@@ -162,8 +162,6 @@ func (w *Writer) Close() error {
 		}
 		fn(w.pagerBuf.String())
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.file != nil {
 		err := w.file.Close()
 		w.file = nil

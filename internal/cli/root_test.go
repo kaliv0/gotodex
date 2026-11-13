@@ -72,7 +72,7 @@ func TestMaxDepthRejectsInvalidValues(t *testing.T) {
 
 func TestMaxDepthRejectsNonIntViaExecute(t *testing.T) {
 	dir := t.TempDir()
-	code := finish(runRoot([]string{"-r", "-m", "xyz", dir}, io.Discard, &bytes.Buffer{}))
+	code := finish(runRoot([]string{"-r", "-m", "xyz", dir}, io.Discard, &bytes.Buffer{}), io.Discard)
 	if code != 2 {
 		t.Fatalf("exit=%d want 2", code)
 	}
@@ -249,7 +249,7 @@ func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 		[]string{filepath.Join(sample, "app.py"), "-s", "-d"},
 		brokenPipeWriter{},
 		&bytes.Buffer{},
-	))
+	), io.Discard)
 	if code != 141 {
 		t.Fatalf("exit=%d want 141", code)
 	}
@@ -261,9 +261,9 @@ func TestSBrokenPipeWriteExits141(t *testing.T) {
 		[]string{filepath.Join(sample, "app.py"), "-s"},
 		brokenPipeWriter{},
 		&bytes.Buffer{},
-	))
+	), io.Discard)
 	if code != 141 {
-		t.Fatalf("exit=%d want 141 (StopExtraction must reach finish)", code)
+		t.Fatalf("exit=%d want 141 (ErrStopExtraction must reach finish)", code)
 	}
 }
 
@@ -279,14 +279,14 @@ func TestMissingPathExitsNonzero(t *testing.T) {
 	if errors.As(err, &ee) && ee.Code == 2 {
 		t.Fatalf("usage exit unexpected: %v", err)
 	}
-	code := finish(runRoot([]string{missing, "-o", out}, io.Discard, &bytes.Buffer{}))
+	code := finish(runRoot([]string{missing, "-o", out}, io.Discard, &bytes.Buffer{}), io.Discard)
 	if code != 1 {
 		t.Fatalf("exit=%d want 1", code)
 	}
 }
 
 func TestExecuteMapsUsageTo2(t *testing.T) {
-	code := finish(runRoot([]string{"-i", t.TempDir()}, io.Discard, &bytes.Buffer{}))
+	code := finish(runRoot([]string{"-i", t.TempDir()}, io.Discard, &bytes.Buffer{}), io.Discard)
 	if code != 2 {
 		t.Fatalf("exit=%d want 2", code)
 	}
@@ -303,7 +303,7 @@ func TestExitCodeMapping(t *testing.T) {
 		{"runtime", errors.New("nope not found"), 1},
 		{"epipe", syscall.EPIPE, 141},
 		{"closed_pipe", io.ErrClosedPipe, 141},
-		{"stop", writer.StopExtraction{}, 141},
+		{"stop", writer.ErrStopExtraction, 141},
 		{"interrupt", errInterrupted, 130},
 	}
 	for _, tt := range tests {
@@ -315,8 +315,64 @@ func TestExitCodeMapping(t *testing.T) {
 	}
 }
 
+func TestFinishUsageWritesGtxErrorPrefix(t *testing.T) {
+	var stderr bytes.Buffer
+	err := &exitError{Code: 2, Err: errors.New("path required")}
+	code := finish(err, &stderr)
+	if code != 2 {
+		t.Fatalf("exit=%d want 2", code)
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "gtx: error:") {
+		t.Fatalf("stderr=%q want contain %q", got, "gtx: error:")
+	}
+	if !strings.Contains(got, "path required") {
+		t.Fatalf("stderr=%q want contain %q", got, "path required")
+	}
+}
+
+func TestFinishRuntimeWritesBareMessage(t *testing.T) {
+	var stderr bytes.Buffer
+	msg := "nope not found"
+	code := finish(errors.New(msg), &stderr)
+	if code != 1 {
+		t.Fatalf("exit=%d want 1", code)
+	}
+	got := stderr.String()
+	if strings.Contains(got, "gtx: error:") {
+		t.Fatalf("stderr=%q must not contain gtx: error:", got)
+	}
+	if !strings.Contains(got, msg) {
+		t.Fatalf("stderr=%q want contain %q", got, msg)
+	}
+}
+
+func TestFinishQuietCodesWriteNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"ok", nil, 0},
+		{"interrupt", errInterrupted, 130},
+		{"stop", writer.ErrStopExtraction, 141},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := finish(tt.err, &stderr)
+			if code != tt.want {
+				t.Fatalf("exit=%d want %d", code, tt.want)
+			}
+			if got := stderr.String(); got != "" {
+				t.Fatalf("stderr=%q want empty", got)
+			}
+		})
+	}
+}
+
 func TestRunInterruptibleMapsCanceled(t *testing.T) {
-	err := runInterruptible(func(ctx context.Context) error {
+	err := runInterruptible(func(_ context.Context) error {
 		return context.Canceled
 	})
 	if !errors.Is(err, errInterrupted) {
@@ -325,7 +381,7 @@ func TestRunInterruptibleMapsCanceled(t *testing.T) {
 	if got := exitCode(err); got != 130 {
 		t.Fatalf("exit=%d want 130", got)
 	}
-	if got := finish(err); got != 130 {
+	if got := finish(err, io.Discard); got != 130 {
 		t.Fatalf("finish=%d want 130", got)
 	}
 	other := errors.New("boom")

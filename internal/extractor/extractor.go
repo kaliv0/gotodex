@@ -1,3 +1,4 @@
+// Package extractor finds token hits under a path.
 package extractor
 
 import (
@@ -20,19 +21,20 @@ import (
 
 // Extractor scans PATH for tokens and writes results.
 type Extractor struct {
-	StdoutWriter io.Writer // nil => os.Stdout
-	StderrWriter io.Writer // nil => os.Stderr
-	re           *regexp.Regexp
-	gi           *ignore.GitIgnore
-	out          *writer.Writer
-	afterFile    func(path string) // test seam: mid-walk cancel
-	root         string
-	outAbs       string // empty => no out-file skip
-	opts         Options
+	re        *regexp.Regexp
+	gi        *ignore.GitIgnore
+	out       *writer.Writer
+	afterFile func(path string) // test seam: mid-walk cancel
+	root      string
+	outAbs    string // empty => no out-file skip
+	opts      Options
 }
 
 // New validates options and builds the token regexp and exclude spec.
 func New(opts Options) (*Extractor, error) {
+	if opts.MaxDepth <= 0 {
+		opts.MaxDepth = DefaultMaxDepth
+	}
 	re, err := prepareTokenPattern(opts.Tokens, opts.IgnoreDefault)
 	if err != nil {
 		return nil, err
@@ -67,7 +69,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("%s not found", e.opts.Path)
 		}
-		return err
+		return fmt.Errorf("lstat %s: %w", e.opts.Path, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s is a symlink", e.opts.Path)
@@ -104,8 +106,9 @@ func (e *Extractor) setOut() error {
 		}
 		path, toStdout = name, e.opts.Tee
 	}
+	// Injected sinks (tests / CLI buffers) skip TTY pager detection.
 	tty := false
-	if toStdout && e.StdoutWriter == nil && e.StderrWriter == nil {
+	if toStdout && e.opts.StdoutW == nil && e.opts.StderrW == nil {
 		if fi, err := os.Stdout.Stat(); err == nil {
 			tty = (fi.Mode() & os.ModeCharDevice) != 0
 		}
@@ -114,8 +117,8 @@ func (e *Extractor) setOut() error {
 		Path:     path,
 		ToStdout: toStdout,
 		TTY:      tty,
-		Stdout:   e.StdoutWriter,
-		Stderr:   e.StderrWriter,
+		Stdout:   e.opts.StdoutW,
+		Stderr:   e.opts.StderrW,
 	})
 	if err != nil {
 		return err
@@ -141,17 +144,13 @@ func (e *Extractor) processDir(ctx context.Context, dir string, depth int) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	maxDepth := e.opts.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = DefaultMaxDepth
-	}
-	if e.isExcluded(dir, true) || depth > maxDepth {
+	if e.isExcluded(dir, true) || depth > e.opts.MaxDepth {
 		return nil
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return fmt.Errorf("readdir %s: %w", dir, err)
 	}
 
 	var dirs []string
@@ -192,7 +191,7 @@ func (e *Extractor) processFile(ctx context.Context, path string) error {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open %s: %w", path, err)
 	}
 	defer func() { _ = f.Close() }()
 

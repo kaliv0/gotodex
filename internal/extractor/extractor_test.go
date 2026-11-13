@@ -83,10 +83,10 @@ func TestSWritesToStdoutOnly(t *testing.T) {
 	sample := materializeSample(t)
 	var buf bytes.Buffer
 	ex := mustNew(t, Options{
-		Path:   filepath.Join(sample, "app.py"),
-		Stdout: true,
+		Path:    filepath.Join(sample, "app.py"),
+		Stdout:  true,
+		StdoutW: &buf,
 	})
-	ex.StdoutWriter = &buf
 	mustRun(t, ex)
 	if got := buf.String(); got != appOut {
 		t.Fatalf("stdout:\n got %q\nwant %q", got, appOut)
@@ -101,11 +101,11 @@ func TestTeeWritesStdoutAndFile(t *testing.T) {
 	out := filepath.Join(sample, "out.txt")
 	var buf bytes.Buffer
 	ex := mustNew(t, Options{
-		Path: filepath.Join(sample, "app.py"),
-		Out:  out,
-		Tee:  true,
+		Path:    filepath.Join(sample, "app.py"),
+		Out:     out,
+		Tee:     true,
+		StdoutW: &buf,
 	})
-	ex.StdoutWriter = &buf
 	mustRun(t, ex)
 	if got := readFile(t, out); got != appOut {
 		t.Fatalf("file:\n got %q\nwant %q", got, appOut)
@@ -119,8 +119,7 @@ func TestTeeWithoutOutUsesTodo(t *testing.T) {
 	sample := materializeSample(t)
 	t.Chdir(sample)
 	var buf bytes.Buffer
-	ex := mustNew(t, Options{Path: "app.py", Tee: true})
-	ex.StdoutWriter = &buf
+	ex := mustNew(t, Options{Path: "app.py", Tee: true, StdoutW: &buf})
 	mustRun(t, ex)
 	if got := readFile(t, filepath.Join(sample, "TODO")); got != appOut {
 		t.Fatalf("TODO:\n got %q\nwant %q", got, appOut)
@@ -145,6 +144,50 @@ func TestMissingPathRaises(t *testing.T) {
 	if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("out must not be created on missing PATH, err=%v", err)
 	}
+}
+
+// extra vs Python: wrap processFile os.Open failures with %w
+func TestOpenFailureWrapped(t *testing.T) {
+	skipIfRoot(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "locked.py")
+	mustWrite(t, path, "# TODO: x\n")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	if f, err := os.Open(path); err == nil {
+		_ = f.Close()
+		t.Skip("open succeeded despite mode 0")
+	}
+
+	var buf bytes.Buffer
+	ex := mustNew(t, Options{Path: path, Stdout: true, StdoutW: &buf})
+	err := ex.Run(context.Background())
+	assertWrappedFS(t, err, "open", path, os.ErrPermission)
+}
+
+// extra vs Python: wrap processDir os.ReadDir failures with %w
+func TestReadDirFailureWrapped(t *testing.T) {
+	skipIfRoot(t)
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "noperm")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(locked, "x.py"), "# TODO: x\n")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	if _, err := os.ReadDir(locked); err == nil {
+		t.Skip("readdir succeeded despite mode 0")
+	}
+
+	var buf bytes.Buffer
+	ex := mustNew(t, Options{Path: locked, Stdout: true, StdoutW: &buf})
+	err := ex.Run(context.Background())
+	assertWrappedFS(t, err, "readdir", locked, os.ErrPermission)
 }
 
 func TestMultipleHitsOneHeaderAndLineNumbers(t *testing.T) {
@@ -227,6 +270,26 @@ func TestMaxDepthZeroUsesDefault120(t *testing.T) {
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")
 	text := runToOut(t, sample, out, Options{Recursive: true, MaxDepth: 0})
+	mustContain(t, text, "TODO: deeper")
+}
+
+// extra vs Python: library MaxDepth <= 0 => DefaultMaxDepth (normalized in New)
+func TestNewNormalizesNonPositiveMaxDepth(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []int{0, -1} {
+		ex := mustNew(t, Options{Path: dir, MaxDepth: d})
+		if ex.opts.MaxDepth != DefaultMaxDepth {
+			t.Fatalf("after New(MaxDepth=%d): opts.MaxDepth=%d want %d",
+				d, ex.opts.MaxDepth, DefaultMaxDepth)
+		}
+	}
+}
+
+// extra vs Python: library MaxDepth -1 => DefaultMaxDepth (CLI still rejects)
+func TestMaxDepthNegativeUsesDefault120(t *testing.T) {
+	sample := materializeSample(t)
+	out := filepath.Join(sample, "out.txt")
+	text := runToOut(t, sample, out, Options{Recursive: true, MaxDepth: -1})
 	mustContain(t, text, "TODO: deeper")
 }
 
@@ -376,11 +439,11 @@ func TestSkipsUndecodableFileAndContinues(t *testing.T) {
 	out := filepath.Join(dir, "out.txt")
 	var stderr bytes.Buffer
 	ex := mustNew(t, Options{
-		Path:  dir,
-		Out:   out,
-		Debug: true,
+		Path:    dir,
+		Out:     out,
+		Debug:   true,
+		StderrW: &stderr,
 	})
-	ex.StderrWriter = &stderr
 	mustRun(t, ex)
 	mustContain(t, readFile(t, out), "TODO: keep me")
 	mustContain(t, stderr.String(), "skipping", "bad.bin")
@@ -392,12 +455,12 @@ func TestDebugEmitsProcessingTrail(t *testing.T) {
 	out := filepath.Join(dir, "out.txt")
 	var stdout, stderr bytes.Buffer
 	ex := mustNew(t, Options{
-		Path:  dir,
-		Out:   out,
-		Debug: true,
+		Path:    dir,
+		Out:     out,
+		Debug:   true,
+		StdoutW: &stdout,
+		StderrW: &stderr,
 	})
-	ex.StdoutWriter = &stdout
-	ex.StderrWriter = &stderr
 	mustRun(t, ex)
 	mustContain(t, readFile(t, out), "processing:\n", "\tgood.py\n")
 	if stdout.Len() != 0 {
@@ -431,11 +494,11 @@ func TestSkipsUndecodableMidFileKeepsPriorHits(t *testing.T) {
 	out := filepath.Join(dir, "out.txt")
 	var stderr bytes.Buffer
 	ex := mustNew(t, Options{
-		Path:  filepath.Join(dir, "mixed.py"),
-		Out:   out,
-		Debug: true,
+		Path:    filepath.Join(dir, "mixed.py"),
+		Out:     out,
+		Debug:   true,
+		StderrW: &stderr,
 	})
-	ex.StderrWriter = &stderr
 	mustRun(t, ex)
 	text := readFile(t, out)
 	mustContain(t, text, "TODO: before")
@@ -451,8 +514,7 @@ func TestSkipsUndecodableSilentWithoutDebug(t *testing.T) {
 	}
 	out := filepath.Join(dir, "out.txt")
 	var stderr bytes.Buffer
-	ex := mustNew(t, Options{Path: dir, Out: out})
-	ex.StderrWriter = &stderr
+	ex := mustNew(t, Options{Path: dir, Out: out, StderrW: &stderr})
 	mustRun(t, ex)
 	mustContain(t, readFile(t, out), "TODO: keep me")
 	if stderr.Len() != 0 {
@@ -543,6 +605,34 @@ func TestIsExcludedStdoutHasNoOutSkip(t *testing.T) {
 
 	if ex.isExcluded(todo, false) {
 		t.Fatal("stdout-only must not treat Opts.Out as a skip path")
+	}
+}
+
+func skipIfRoot(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("chmod modes ineffective as root")
+	}
+}
+
+// assertWrappedFS checks %w wrap: errors.Is target, op+path in message, not bare *os.PathError.
+func assertWrappedFS(t *testing.T, err error, op, path string, target error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !errors.Is(err, target) {
+		t.Fatalf("errors.Is(%v, %v)=false", err, target)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, op) {
+		t.Fatalf("want %q in %q", op, msg)
+	}
+	if !strings.Contains(msg, path) {
+		t.Fatalf("want path %q in %q", path, msg)
+	}
+	if _, ok := err.(*os.PathError); ok {
+		t.Fatalf("want wrapped error, got bare *os.PathError: %v", err)
 	}
 }
 

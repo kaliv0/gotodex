@@ -1,3 +1,4 @@
+// Package cli is the gtx Cobra CLI.
 package cli
 
 import (
@@ -98,13 +99,13 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 				Out:           f.out,
 				Stdout:        f.stdout,
 				Tee:           f.tee,
+				StdoutW:       stdout,
+				StderrW:       stderr,
 			}
 			ex, err := extractor.New(opts)
 			if err != nil {
 				return err
 			}
-			ex.StdoutWriter = stdout
-			ex.StderrWriter = stderr
 			return runInterruptible(ex.Run)
 		},
 	}
@@ -177,7 +178,7 @@ func flagNames(cmd *cobra.Command, name string) string {
 
 // Execute runs root and maps errors to exit codes.
 func Execute() int {
-	return finish(NewRoot().Execute())
+	return finish(NewRoot().Execute(), os.Stderr)
 }
 
 func runRoot(args []string, stdout, stderr io.Writer) error {
@@ -194,15 +195,20 @@ func runRoot(args []string, stdout, stderr io.Writer) error {
 
 // finish maps err to an exit code.
 // Quiet on 0/130/141. Prefix usage (2). Bare message on runtime (1).
-func finish(err error) int {
+// stderr nil => os.Stderr.
+func finish(err error, stderr io.Writer) int {
 	code := exitCode(err)
-	switch code {
-	case 0, 130, 141:
+	if code == 0 || code == 130 || code == 141 {
 		return code
+	}
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	switch code {
 	case 2:
-		fmt.Fprintln(os.Stderr, "gtx: error:", err.Error())
+		_, _ = fmt.Fprintln(stderr, "gtx: error:", err.Error())
 	default:
-		fmt.Fprintln(os.Stderr, err.Error())
+		_, _ = fmt.Fprintln(stderr, err.Error())
 	}
 	return code
 }
@@ -218,7 +224,7 @@ func exitCode(err error) int {
 	if errors.Is(err, errInterrupted) {
 		return 130
 	}
-	if _, ok := errors.AsType[writer.StopExtraction](err); ok || writer.IsBrokenPipe(err) {
+	if errors.Is(err, writer.ErrStopExtraction) || writer.IsBrokenPipe(err) {
 		return 141
 	}
 	return 1

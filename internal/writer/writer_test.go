@@ -2,9 +2,11 @@ package writer_test
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -229,11 +231,12 @@ func TestStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
 		Stdout:   brokenPipeWriter{},
 	})
 	err := w.WriteEntry(1, "# TODO: x\n")
-	if err != (writer.StopExtraction{}) {
-		t.Fatalf("err=%v (%T) want StopExtraction", err, err)
+	if !errors.Is(err, writer.ErrStopExtraction) {
+		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
 	}
 }
 
+// Sequential writes only. Matches Writer single-threaded contract.
 func TestFileOnlyWrite(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "TODO")
 	w := mustNewWith(t, writer.Options{Path: outPath})
@@ -346,8 +349,8 @@ func TestStdoutOnlyStopsOnBrokenFlush(t *testing.T) {
 		Stdout:   &flushPipeWriter{},
 	})
 	err := w.WriteEntry(1, "# TODO: x\n")
-	if err != (writer.StopExtraction{}) {
-		t.Fatalf("err=%v (%T) want StopExtraction", err, err)
+	if !errors.Is(err, writer.ErrStopExtraction) {
+		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
 	}
 }
 
@@ -397,8 +400,8 @@ func TestDebugStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
 		Stdout:   brokenPipeWriter{},
 	})
 	err := w.Debug("dbg\n")
-	if err != (writer.StopExtraction{}) {
-		t.Fatalf("err=%v (%T) want StopExtraction", err, err)
+	if !errors.Is(err, writer.ErrStopExtraction) {
+		t.Fatalf("err=%v (%T) want ErrStopExtraction", err, err)
 	}
 }
 
@@ -417,6 +420,42 @@ func TestNewMatchesNewWithTTYDetection(t *testing.T) {
 	}
 	if mustNew(t, "", false).UsesPager() {
 		t.Fatal("New(toStdout=false) must not use pager")
+	}
+}
+
+// extra vs Python: wrap os.Create failures in NewWith with %w
+func TestCreateFailureWrapped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("chmod modes ineffective as root")
+	}
+	dir := t.TempDir()
+	ro := filepath.Join(dir, "ro")
+	if err := os.Mkdir(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	outPath := filepath.Join(ro, "out.txt")
+	if f, err := os.Create(outPath); err == nil {
+		_ = f.Close()
+		t.Skip("create succeeded in mode 0555 dir")
+	}
+
+	_, err := writer.NewWith(writer.Options{Path: outPath})
+	if err == nil {
+		t.Fatal("want create error")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("errors.Is(%v, ErrPermission)=false", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "create") {
+		t.Fatalf("want %q in %q", "create", msg)
+	}
+	if !strings.Contains(msg, outPath) {
+		t.Fatalf("want path %q in %q", outPath, msg)
+	}
+	if _, ok := err.(*os.PathError); ok {
+		t.Fatalf("want wrapped error, got bare *os.PathError: %v", err)
 	}
 }
 
