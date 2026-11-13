@@ -16,10 +16,7 @@ import (
 	"github.com/kaliv0/gotodex/internal/writer"
 )
 
-// Version is the CLI --version string.
 const Version = "0.1.0"
-
-const shortDesc = `Peak trash sniffer and TODO extractor`
 
 const banner = `
        ________________   ___/-\___     ___/-\___     ___/-\___
@@ -37,7 +34,7 @@ const banner = `
           | .   . |                                | .   . |
            \_____/                                  \_____/
 
-            ` + shortDesc + `
+            Peak trash sniffer and TODO extractor
 `
 
 var errInterrupted = errors.New("interrupted")
@@ -69,7 +66,7 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:           "gtx PATH",
-		Short:         shortDesc,
+		Short:         "Peak trash sniffer and TODO extractor",
 		Long:          banner,
 		Version:       Version,
 		SilenceUsage:  true,
@@ -210,8 +207,6 @@ func runRoot(args []string, stdout, stderr io.Writer) error {
 }
 
 // finish maps err to an exit code.
-// Quiet on 0/130/141. Prefix usage (2). Bare message on runtime (1).
-// stderr nil => os.Stderr.
 func finish(err error, stderr io.Writer) int {
 	code := exitCode(err)
 	if code == 0 || code == 130 || code == 141 {
