@@ -2,6 +2,10 @@
   <img src="https://github.com/kaliv0/gotodex/blob/main/.github/assets/truck.jpg?raw=true" width="400" alt="Gotodex">
 </div>
 
+<a href="https://github.com/kaliv0/gotodex/releases"><img src="https://img.shields.io/github/release/kaliv0/gotodex.svg" alt="Latest Release"></a>
+<a href="https://pkg.go.dev/github.com/kaliv0/gotodex"><img src="https://pkg.go.dev/badge/github.com/kaliv0/gotodex.svg" alt="pkg.go.dev"></a>
+<a href="https://github.com/kaliv0/gotodex/actions"><img src="https://github.com/kaliv0/gotodex/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build Status"></a>
+
 # gotodex
 
 Peak trash sniffer and TODO extractor
