@@ -395,6 +395,71 @@ func TestRunInterruptibleMapsCanceled(t *testing.T) {
 }
 
 func TestHelpContainsTrashBanner(t *testing.T) {
+	help := helpOutput(t)
+	for _, needle := range []string{"GTX", "Peak trash sniffer"} {
+		if !strings.Contains(help, needle) {
+			t.Errorf("help missing %q (want banner art / long description)\nhelp:\n%s", needle, help)
+		}
+	}
+}
+
+// TestHelpContainsUsageExamples locks distinctive --help Usage needles.
+// Exact Cobra wrapping is not required.
+func TestHelpContainsUsageExamples(t *testing.T) {
+	help := helpOutput(t)
+	needles := []string{
+		// -t / --tokens (rich help)
+		"//FIXME{3}",
+		"//FIXME{3} - revisit after release",
+		`if path == root {`,
+		`return false`,
+		"curly braces",
+		// StringSlice: comma-separated and repeated -t
+		"comma-separated - in addition to default TODO, FIXME",
+		"-t WARN,REVISIT",
+		"-t WARN -t REVISIT",
+		// -i / --ignore-default
+		"use only -t tokens (skip default TODO, FIXME)",
+		// -x / --exclude (example block)
+		"git-like patterns to skip",
+		"bar.go       any file named bar.go",
+		"/bar.go      only top-level",
+		"foo/bar.go   path under the scan root",
+		"vendor/      directory and its contents",
+		"**/*.o       nested matches",
+		"!fizz.md     re-include after a broader exclude",
+		// StringSlice: comma-separated -x patterns
+		"comma-separated",
+		// -H / --include-hidden
+		"do not apply default excludes for hidden names (.* / __*)",
+		// -g / --use-gitignore
+		"use exclude patterns from .gitignore (if present in scan root) when traversing dirs",
+		// -f / --full-path
+		"display absolute dir/file path",
+		// -c / --concise
+		"'//TODO{5}: after release'",
+		// -r / --recursive
+		"traverse given dir path recursively",
+		// -m / --max-depth
+		"maximum depth of dir traversal - used with -r/--recursive flag (default: 120)",
+		// -d / --debug
+		"enable debug mode",
+		// -o / --out
+		"path to output file - if existing dir is passed instead TODO out file will be saved inside the path",
+		// -s / --stdout
+		"output result to stdout",
+		// --tee
+		"output result to stdout and save to file",
+	}
+	for _, needle := range needles {
+		if !strings.Contains(help, needle) {
+			t.Errorf("help missing %q\nhelp:\n%s", needle, help)
+		}
+	}
+}
+
+func helpOutput(t *testing.T) string {
+	t.Helper()
 	root := NewRoot()
 	var out bytes.Buffer
 	root.SetOut(&out)
@@ -403,12 +468,7 @@ func TestHelpContainsTrashBanner(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("help: %v", err)
 	}
-	help := out.String()
-	for _, needle := range []string{"GTX", "Peak trash sniffer"} {
-		if !strings.Contains(help, needle) {
-			t.Errorf("help missing %q (want banner art / long description)\nhelp:\n%s", needle, help)
-		}
-	}
+	return out.String()
 }
 
 func TestCmdGTXMainExists(t *testing.T) {

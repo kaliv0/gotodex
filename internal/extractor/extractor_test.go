@@ -146,7 +146,7 @@ func TestMissingPathRaises(t *testing.T) {
 	}
 }
 
-// extra vs Python: wrap processFile os.Open failures with %w
+// processFile wraps os.Open failures with %w.
 func TestOpenFailureWrapped(t *testing.T) {
 	skipIfRoot(t)
 	dir := t.TempDir()
@@ -167,7 +167,7 @@ func TestOpenFailureWrapped(t *testing.T) {
 	assertWrappedFS(t, err, "open", path, os.ErrPermission)
 }
 
-// extra vs Python: wrap processDir os.ReadDir failures with %w
+// processDir wraps os.ReadDir failures with %w.
 func TestReadDirFailureWrapped(t *testing.T) {
 	skipIfRoot(t)
 	dir := t.TempDir()
@@ -273,7 +273,7 @@ func TestMaxDepthZeroUsesDefault120(t *testing.T) {
 	mustContain(t, text, "TODO: deeper")
 }
 
-// extra vs Python: library MaxDepth <= 0 => DefaultMaxDepth (normalized in New)
+// New normalizes MaxDepth <= 0 to DefaultMaxDepth.
 func TestNewNormalizesNonPositiveMaxDepth(t *testing.T) {
 	dir := t.TempDir()
 	for _, d := range []int{0, -1} {
@@ -285,7 +285,7 @@ func TestNewNormalizesNonPositiveMaxDepth(t *testing.T) {
 	}
 }
 
-// extra vs Python: library MaxDepth -1 => DefaultMaxDepth (CLI still rejects)
+// Library MaxDepth -1 => DefaultMaxDepth. CLI still rejects non-positive -m.
 func TestMaxDepthNegativeUsesDefault120(t *testing.T) {
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")

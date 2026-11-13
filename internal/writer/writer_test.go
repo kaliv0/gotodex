@@ -423,7 +423,7 @@ func TestNewMatchesNewWithTTYDetection(t *testing.T) {
 	}
 }
 
-// extra vs Python: wrap os.Create failures in NewWith with %w
+// NewWith wraps os.Create failures with %w.
 func TestCreateFailureWrapped(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("chmod modes ineffective as root")

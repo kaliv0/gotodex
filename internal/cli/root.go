@@ -40,6 +40,28 @@ const banner = `
             ` + shortDesc + `
 `
 
+// tokensHelp is -t/--tokens Usage.
+const tokensHelp = `tokens to search (comma-separated - in addition to default TODO, FIXME) e.g. -t WARN,REVISIT or -t WARN -t REVISIT.
+If the token is followed by {lines-count} e.g. //FIXME{3}
+the extractor will include multiline snippet with the length specified between the curly braces:
+
+    //FIXME{3} - revisit after release
+    if path == root {
+        return false
+    }
+`
+
+// excludeHelp is -x/--exclude Usage.
+const excludeHelp = `git-like patterns to skip (comma-separated paths, names, or globs - combined with default .* / __*), e.g.
+
+    bar.go       any file named bar.go
+    /bar.go      only top-level
+    foo/bar.go   path under the scan root
+    vendor/      directory and its contents
+    **/*.o       nested matches
+    !fizz.md     re-include after a broader exclude
+`
+
 var errInterrupted = errors.New("interrupted")
 
 type flagBundle struct {
@@ -110,19 +132,19 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&f.tokens, "tokens", "t", nil, "tokens to search (comma-separated - defaults TODO,FIXME)")
-	cmd.Flags().BoolVarP(&f.ignoreDefault, "ignore-default", "i", false, "use only -t tokens")
-	cmd.Flags().StringSliceVarP(&f.exclude, "exclude", "x", nil, "gitignore-style exclude patterns (comma-separated)")
-	cmd.Flags().BoolVarP(&f.includeHidden, "include-hidden", "H", false, "do not apply default .* / __* excludes")
-	cmd.Flags().BoolVarP(&f.useGitignore, "use-gitignore", "g", false, "apply .gitignore from scan root")
-	cmd.Flags().BoolVarP(&f.fullPath, "full-path", "f", false, "display absolute paths")
-	cmd.Flags().BoolVarP(&f.concise, "concise", "c", false, "token messages only; no snippet body")
-	cmd.Flags().BoolVarP(&f.recursive, "recursive", "r", false, "traverse directories recursively")
-	cmd.Flags().IntVarP(&f.maxDepth, "max-depth", "m", 0, "max dir depth (requires -r)")
+	cmd.Flags().StringSliceVarP(&f.tokens, "tokens", "t", nil, tokensHelp)
+	cmd.Flags().BoolVarP(&f.ignoreDefault, "ignore-default", "i", false, "use only -t tokens (skip default TODO, FIXME)")
+	cmd.Flags().StringSliceVarP(&f.exclude, "exclude", "x", nil, excludeHelp)
+	cmd.Flags().BoolVarP(&f.includeHidden, "include-hidden", "H", false, "do not apply default excludes for hidden names (.* / __*)")
+	cmd.Flags().BoolVarP(&f.useGitignore, "use-gitignore", "g", false, "use exclude patterns from .gitignore (if present in scan root) when traversing dirs")
+	cmd.Flags().BoolVarP(&f.fullPath, "full-path", "f", false, "display absolute dir/file path")
+	cmd.Flags().BoolVarP(&f.concise, "concise", "c", false, "display only token messages e.g. '//TODO{5}: after release', ignore longer snippets")
+	cmd.Flags().BoolVarP(&f.recursive, "recursive", "r", false, "traverse given dir path recursively")
+	cmd.Flags().IntVarP(&f.maxDepth, "max-depth", "m", 0, "maximum depth of dir traversal - used with -r/--recursive flag (default: 120)")
 	cmd.Flags().BoolVarP(&f.debug, "debug", "d", false, "enable debug mode")
-	cmd.Flags().StringVarP(&f.out, "out", "o", "", "output file (or dir to place TODO inside)")
-	cmd.Flags().BoolVarP(&f.stdout, "stdout", "s", false, "write to stdout only")
-	cmd.Flags().BoolVar(&f.tee, "tee", false, "write to stdout and file")
+	cmd.Flags().StringVarP(&f.out, "out", "o", "", "path to output file - if existing dir is passed instead TODO out file will be saved inside the path")
+	cmd.Flags().BoolVarP(&f.stdout, "stdout", "s", false, "output result to stdout")
+	cmd.Flags().BoolVar(&f.tee, "tee", false, "output result to stdout and save to file")
 
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &exitError{Code: 2, Err: err}
