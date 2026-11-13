@@ -8,7 +8,10 @@ Peak trash sniffer and TODO extractor
 
 ```bash
 go install github.com/kaliv0/gotodex/cmd/gtx@latest
+```
+Usage:
 
+```bash
 gtx <PATH> [OPTIONS...]
 ```
 
