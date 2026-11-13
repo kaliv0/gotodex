@@ -16,6 +16,7 @@ import (
 	"github.com/kaliv0/gotodex/internal/writer"
 )
 
+// Version is the CLI --version string.
 const Version = "0.1.0"
 
 const banner = `
