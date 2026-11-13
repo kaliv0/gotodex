@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-// appOut is the expected default scan of sample/app.py.
 const appOut = "======================\napp.py\n\tline 1: # TODO: main\n\tline 2: # FIXME: bug\n"
 
 func TestDefaultScan(t *testing.T) {
@@ -133,18 +132,21 @@ func TestTeeWithoutOutUsesTodo(t *testing.T) {
 
 func TestMissingPathRaises(t *testing.T) {
 	dir := t.TempDir()
+	out := filepath.Join(dir, "out.txt")
 	ex := mustNew(t, Options{
 		Path: filepath.Join(dir, "missing"),
-		Out:  filepath.Join(dir, "out.txt"),
+		Out:  out,
 	})
 	err := ex.Run(context.Background())
 	if err == nil {
 		t.Fatal("want error for missing path")
 	}
 	mustContain(t, err.Error(), "not found")
+	if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("out must not be created on missing PATH, err=%v", err)
+	}
 }
 
-// Multiple hits -> one header + line numbers + snippet body.
 func TestMultipleHitsOneHeaderAndLineNumbers(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "multi.py")
@@ -157,7 +159,6 @@ func TestMultipleHitsOneHeaderAndLineNumbers(t *testing.T) {
 	mustContain(t, text, "line 2:", "line 4:", "TODO", "FIXME", "body")
 }
 
-// Zero-token file still creates an empty out file.
 func TestZeroTokenFileEmptyOut(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -180,7 +181,6 @@ func TestZeroTokenFileEmptyOut(t *testing.T) {
 	}
 }
 
-// Out==Path: eager truncate so Run finishes empty (else hang on read+Create).
 func TestOEqualsScannedFileTruncates(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "f.py")
@@ -201,7 +201,6 @@ func TestOEqualsScannedFileTruncates(t *testing.T) {
 	}
 }
 
-// Zero-hit scan truncates a stale out file.
 func TestZeroHitScanTruncatesStaleOut(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "empty.py")
@@ -221,7 +220,6 @@ func TestRFindsNested(t *testing.T) {
 	mustContain(t, text, "TODO: deep", "TODO: deeper")
 }
 
-// MaxDepth≤0 -> default 120, not a hard top-level gate.
 func TestMaxDepthZeroUsesDefault120(t *testing.T) {
 	if DefaultMaxDepth != 120 {
 		t.Fatalf("DefaultMaxDepth=%d want 120", DefaultMaxDepth)
@@ -233,8 +231,6 @@ func TestMaxDepthZeroUsesDefault120(t *testing.T) {
 }
 
 func TestRMLimitsDepth(t *testing.T) {
-	// Root depth=0. Skip when depth > maxDepth.
-	// maxDepth=1 -> enter nested/ (depth 1) but not nested/mid/ (depth 2).
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")
 	text := runToOut(t, sample, out, Options{
@@ -246,7 +242,6 @@ func TestRMLimitsDepth(t *testing.T) {
 }
 
 func TestWithoutRSkipsNested(t *testing.T) {
-	// Without -r: top-level files only (processDir does not collect children).
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")
 	text := runToOut(t, sample, out, Options{})
@@ -254,7 +249,69 @@ func TestWithoutRSkipsNested(t *testing.T) {
 	mustContain(t, text, "TODO: main")
 }
 
-// DirEntry is Lstat-based. Symlink dirs are not followed.
+func TestDirWalkOrderFilesThenDirsByName(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.txt")
+	for _, name := range []string{"c.py", "a.py", "b.py"} {
+		mustWrite(t, filepath.Join(dir, name), "# TODO: "+name+"\n")
+	}
+	mustWrite(t, filepath.Join(dir, "d", "z.py"), "# TODO: nested\n")
+	text := runToOut(t, dir, out, Options{Recursive: true})
+	markers := []string{"TODO: a.py", "TODO: b.py", "TODO: c.py", "TODO: nested"}
+	prev := -1
+	for _, m := range markers {
+		i := strings.Index(text, m)
+		if i < 0 {
+			t.Fatalf("missing %q\n%s", m, text)
+		}
+		if i <= prev {
+			t.Fatalf("order: %q at %d, prior end %d\n%s", m, i, prev, text)
+		}
+		prev = i
+	}
+}
+
+func TestSymlinkPathRaises(t *testing.T) {
+	cases := []struct {
+		name      string
+		targetDir bool
+	}{
+		{name: "file", targetDir: false},
+		{name: "dir", targetDir: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var target, link string
+			if tc.targetDir {
+				target = filepath.Join(dir, "dir")
+				if err := os.Mkdir(target, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				mustWrite(t, filepath.Join(target, "x.py"), "# TODO: x\n")
+				link = filepath.Join(dir, "linkdir")
+			} else {
+				target = filepath.Join(dir, "file.py")
+				mustWrite(t, target, "# TODO: x\n")
+				link = filepath.Join(dir, "link.py")
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatalf("symlink: %v", err)
+			}
+			out := filepath.Join(dir, "out.txt")
+			ex := mustNew(t, Options{Path: link, Out: out})
+			err := ex.Run(context.Background())
+			if err == nil {
+				t.Fatal("want error for symlink PATH")
+			}
+			mustContain(t, err.Error(), "is a symlink")
+			if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("out must not be created when PATH is a symlink, err=%v", err)
+			}
+		})
+	}
+}
+
 func TestExtraSymlinkDirNotFollowed(t *testing.T) {
 	scan := t.TempDir()
 	outside := t.TempDir()
@@ -296,7 +353,6 @@ func TestFWritesAbsolutePath(t *testing.T) {
 }
 
 func TestDoesNotRescanOutputFile(t *testing.T) {
-	// Don't re-scan out file. Without the skip, read+write feedback-loops.
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "TODO")
 	mustWrite(t, out, "======================\nstale.py\n\tline 1: # TODO: from previous run\n")
@@ -330,7 +386,6 @@ func TestSkipsUndecodableFileAndContinues(t *testing.T) {
 	mustContain(t, stderr.String(), "skipping", "bad.bin")
 }
 
-// File-only -d: processing trail in out file. Stdout empty.
 func TestDebugEmitsProcessingTrail(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "good.py"), "# TODO: keep me\n")
@@ -353,7 +408,6 @@ func TestDebugEmitsProcessingTrail(t *testing.T) {
 	}
 }
 
-// Relative -o still compared via Abs.
 func TestDoesNotRescanOutputFileRelativeOut(t *testing.T) {
 	sample := materializeSample(t)
 	t.Chdir(sample)
@@ -370,7 +424,6 @@ func TestDoesNotRescanOutputFileRelativeOut(t *testing.T) {
 	mustContain(t, text, "TODO: main")
 }
 
-// Invalid UTF-8 after a prior hit — skip remainder. Prior hits kept.
 func TestSkipsUndecodableMidFileKeepsPriorHits(t *testing.T) {
 	dir := t.TempDir()
 	body := "# TODO: before\n" + string([]byte{0xff, 0xfe}) + " TODO: after\n"
@@ -390,7 +443,6 @@ func TestSkipsUndecodableMidFileKeepsPriorHits(t *testing.T) {
 	mustContain(t, stderr.String(), "skipping")
 }
 
-// Without -d, undecodable skip is silent (no stderr).
 func TestSkipsUndecodableSilentWithoutDebug(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "good.py"), "# TODO: keep me\n")
@@ -408,12 +460,9 @@ func TestSkipsUndecodableSilentWithoutDebug(t *testing.T) {
 	}
 }
 
-// TestRunCanceledMidWalk: afterFile cancels ctx after the first file.
-// Run must return context.Canceled and leave later files unprocessed.
 func TestRunCanceledMidWalk(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.txt")
-	// ReadDir name order: a -> b -> c.
 	for _, name := range []string{"a.py", "b.py", "c.py"} {
 		mustWrite(t, filepath.Join(dir, name), "# TODO: "+name+"\n")
 	}
@@ -437,7 +486,6 @@ func TestRunCanceledMidWalk(t *testing.T) {
 	}
 }
 
-// TestRunPreCanceledCtx: already-canceled ctx must not process any file.
 func TestRunPreCanceledCtx(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.txt")
@@ -460,7 +508,6 @@ func TestRunPreCanceledCtx(t *testing.T) {
 	}
 }
 
-// Out-path skip must not require a full tree walk (walk feedback-loops without it).
 func TestIsExcludedSkipsOutPath(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "TODO")
@@ -476,14 +523,12 @@ func TestIsExcludedSkipsOutPath(t *testing.T) {
 	if !ex.isExcluded(out, false) {
 		t.Fatal("want out path excluded (absolute compare)")
 	}
-	// Relative form of the same out file must also match once Abs-resolved.
 	t.Chdir(dir)
 	if !ex.isExcluded("TODO", false) {
 		t.Fatal("want relative out path excluded via abs compare")
 	}
 }
 
-// Stdout-only => no out-file skip.
 func TestIsExcludedStdoutHasNoOutSkip(t *testing.T) {
 	dir := t.TempDir()
 	todo := filepath.Join(dir, "TODO")
@@ -575,7 +620,6 @@ func runToOut(t *testing.T, path, out string, opts Options) string {
 	return readFile(t, out)
 }
 
-// mustRunWithin fails if Run feedback-loops (missing out-path skip).
 func mustRunWithin(t *testing.T, ex *Extractor, d time.Duration) {
 	t.Helper()
 	done := make(chan error, 1)

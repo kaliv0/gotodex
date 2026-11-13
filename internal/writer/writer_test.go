@@ -144,9 +144,8 @@ func TestTTYTeePagesAndWritesFile(t *testing.T) {
 	}
 }
 
-func TestPageSetsLESSWhenUnset(t *testing.T) {
+func TestPageDoesNotSetLESSWhenUnset(t *testing.T) {
 	unsetLESS(t)
-	// Avoid spawning a real pager: `true` drains stdin and exits 0.
 	t.Setenv("PAGER", "true")
 
 	w := mustNewWith(t, writer.Options{
@@ -159,12 +158,10 @@ func TestPageSetsLESSWhenUnset(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if got := os.Getenv("LESS"); got != "-RF" {
-		t.Fatalf("LESS=%q want -RF", got)
+	if _, ok := os.LookupEnv("LESS"); ok {
+		t.Fatalf("LESS=%q want unset after page", os.Getenv("LESS"))
 	}
 }
-
-// --- writer-level tee / EPIPE ---
 
 func TestTeeWritesStdoutAndFile(t *testing.T) {
 	var out bytes.Buffer
@@ -259,7 +256,6 @@ func TestFileOnlyWrite(t *testing.T) {
 	}
 }
 
-// Path set -> open/truncate before Write*.
 func TestOutPathTruncatedOnInit(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	if err := os.WriteFile(outPath, []byte("stale\n"), 0o644); err != nil {
@@ -278,7 +274,6 @@ func TestOutPathTruncatedOnInit(t *testing.T) {
 	}
 }
 
-// Preserve existing LESS. page must not overwrite.
 func TestPagePreservesLESSWhenSet(t *testing.T) {
 	t.Setenv("LESS", "-S")
 	t.Setenv("PAGER", "true")
@@ -298,7 +293,6 @@ func TestPagePreservesLESSWhenSet(t *testing.T) {
 	}
 }
 
-// ErrClosedPipe also treated as broken pipe.
 func TestTeeSurvivesErrClosedPipe(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	w := mustNewWith(t, writer.Options{
@@ -322,7 +316,6 @@ func TestTeeSurvivesErrClosedPipe(t *testing.T) {
 	}
 }
 
-// EPIPE on Flush (after successful Write) still stops/tees like write EPIPE.
 func TestTeeSurvivesBrokenFlush(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	w := mustNewWith(t, writer.Options{
@@ -358,7 +351,6 @@ func TestStdoutOnlyStopsOnBrokenFlush(t *testing.T) {
 	}
 }
 
-// PAGER may include args (split on whitespace, no shell).
 func TestPageAcceptsPAGERWithArgs(t *testing.T) {
 	t.Setenv("PAGER", "true -ignored")
 	unsetLESS(t)
@@ -372,7 +364,6 @@ func TestPageAcceptsPAGERWithArgs(t *testing.T) {
 	}
 }
 
-// Tee + EPIPE: Debug disables stdout, keeps writing file.
 func TestDebugTeeSurvivesBrokenStdout(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	w := mustNewWith(t, writer.Options{
@@ -399,7 +390,6 @@ func TestDebugTeeSurvivesBrokenStdout(t *testing.T) {
 	}
 }
 
-// Stdout-only Debug + EPIPE -> StopExtraction (same as hits).
 func TestDebugStdoutOnlyStopsOnBrokenStdout(t *testing.T) {
 	w := mustNewWith(t, writer.Options{
 		ToStdout: true,
@@ -455,13 +445,11 @@ func (e errWriter) Write([]byte) (int, error) {
 	return 0, e.err
 }
 
-// flushPipeWriter succeeds Write then fails Flush with EPIPE.
 type flushPipeWriter struct{}
 
 func (f *flushPipeWriter) Write(p []byte) (int, error) { return len(p), nil }
 func (f *flushPipeWriter) Flush() error                { return syscall.EPIPE }
 
-// Unix-only: EPIPE lives in writer.go. No GOOS-split brokenpipe_*.go stubs.
 func TestNoBrokenPipeSplitFiles(t *testing.T) {
 	matches, err := filepath.Glob("brokenpipe_*.go")
 	if err != nil {

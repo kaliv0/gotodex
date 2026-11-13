@@ -18,10 +18,8 @@ import (
 // Version is the CLI --version string.
 const Version = "0.1.0"
 
-// shortDesc is the one-line Cobra Short (and summary line of TRASH).
 const shortDesc = `Peak trash sniffer and TODO extractor`
 
-// banner is the ASCII truck art + shortDesc shown in --help.
 const banner = `
        ________________   ___/-\___     ___/-\___     ___/-\___
      / /             ||  |---------|   |---------|   |---------|
@@ -41,7 +39,6 @@ const banner = `
             ` + shortDesc + `
 `
 
-// errInterrupted is SIGINT quiet exit 130.
 var errInterrupted = errors.New("interrupted")
 
 type flagBundle struct {
@@ -66,7 +63,6 @@ func NewRoot() *cobra.Command {
 	return newRoot(nil, nil)
 }
 
-// newRoot builds root. stdout/stderr inject Extractor sinks (test seam for -s/--tee/EPIPE).
 func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	f := &flagBundle{}
 
@@ -76,7 +72,7 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 		Long:          banner,
 		Version:       Version,
 		SilenceUsage:  true,
-		SilenceErrors: true, // finish() prints. Avoid cobra + finish double-print.
+		SilenceErrors: true,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 				return &exitError{Code: 2, Err: err}
@@ -127,7 +123,6 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	cmd.Flags().BoolVarP(&f.stdout, "stdout", "s", false, "write to stdout only")
 	cmd.Flags().BoolVar(&f.tee, "tee", false, "write to stdout and file")
 
-	// Flag parse failures -> exit 2 (same as validate). No string-matching in finish.
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &exitError{Code: 2, Err: err}
 	})
@@ -157,7 +152,6 @@ func validate(cmd *cobra.Command, f *flagBundle) error {
 	return nil
 }
 
-// trimNonEmpty trims each entry and drops blanks (spaces around commas, empty slots).
 func trimNonEmpty(ss []string) []string {
 	out := make([]string, 0, len(ss))
 	for _, s := range ss {
@@ -186,7 +180,6 @@ func Execute() int {
 	return finish(NewRoot().Execute())
 }
 
-// runRoot executes root with argv and optional IO sinks (tests).
 func runRoot(args []string, stdout, stderr io.Writer) error {
 	root := newRoot(stdout, stderr)
 	root.SetArgs(args)
@@ -199,8 +192,8 @@ func runRoot(args []string, stdout, stderr io.Writer) error {
 	return root.Execute()
 }
 
-// finish maps err to an exit code and prints stderr when needed.
-// Quiet on 0/130/141. "gtx: error:" prefix on usage (2). Bare message on runtime (1).
+// finish maps err to an exit code.
+// Quiet on 0/130/141. Prefix usage (2). Bare message on runtime (1).
 func finish(err error) int {
 	code := exitCode(err)
 	switch code {
@@ -214,8 +207,7 @@ func finish(err error) int {
 	return code
 }
 
-// exitCode maps run errors to process exit codes.
-// 0 ok. Usage/validate -> 2. Runtime -> 1. StopExtraction/EPIPE/ErrClosedPipe -> 141. Interrupt -> 130.
+// exitCode: 0 ok, 2 usage, 1 runtime, 141 EPIPE, 130 interrupt.
 func exitCode(err error) int {
 	if err == nil {
 		return 0
@@ -232,9 +224,6 @@ func exitCode(err error) int {
 	return 1
 }
 
-// runInterruptible runs fn under SIGINT via NotifyContext, synchronously.
-// Cancel is observed between files. fn finishes the current file before return.
-// context.Canceled -> errInterrupted (exit 130).
 func runInterruptible(fn func(context.Context) error) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -245,7 +234,6 @@ func runInterruptible(fn func(context.Context) error) error {
 	return err
 }
 
-// exitError carries a process exit code.
 type exitError struct {
 	Err  error
 	Code int

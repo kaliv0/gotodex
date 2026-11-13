@@ -28,7 +28,7 @@ var DefaultTokens = []string{"TODO", "FIXME"}
 // DefaultGlobs exclude hidden / dunder names unless -H.
 var DefaultGlobs = []string{".*", "__*"}
 
-// Options is the extract configuration (CLI + library).
+// Options configures extraction.
 type Options struct {
 	Path          string
 	Out           string // empty => defaultOutName when not stdout-only
@@ -46,10 +46,6 @@ type Options struct {
 	Debug         bool
 }
 
-// --- tokens ---
-
-// prepareTokenPattern builds a case-insensitive token regexp.
-// Go RE2 has no lookbehind. Word boundaries are checked in findToken.
 func prepareTokenPattern(tokens []string, ignoreDefault bool) (*regexp.Regexp, error) {
 	var toks []string
 	if !ignoreDefault {
@@ -72,15 +68,13 @@ func prepareTokenPattern(tokens []string, ignoreDefault bool) (*regexp.Regexp, e
 	return regexp.Compile("(?i)(?:" + strings.Join(alts, "|") + ")")
 }
 
-// tokenHit is one hit: original-casing span from the line.
 type tokenHit struct {
 	Token string
 	Start int
 	End   int
 }
 
-// findToken returns the first token match on line, or nil.
-// Prefer leftmost, then longest (re alts are longest-first).
+// findToken returns the first match (leftmost, then longest), or nil.
 func findToken(re *regexp.Regexp, line string) *tokenHit {
 	for _, loc := range re.FindAllStringIndex(line, -1) {
 		start, end := loc[0], loc[1]
@@ -108,22 +102,14 @@ func isWordBoundary(line string, start, end int) bool {
 	return true
 }
 
-// isWordRune is a word char: Unicode letter, digit, or underscore.
 func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-// --- snippet ---
-
-// errInvalidSnippetCount is the base for invalid `{N}` after a token.
 var errInvalidSnippetCount = errors.New("invalid snippet count")
 
-// snippetCount parses optional `{N}` immediately after the matched token.
-//
-// tokenEnd is the byte index right after the token. It must land on '{' to
-// parse a count. If line[tokenEnd] is not '{', returns 1.
-//
-// {N} means N total lines in the snippet (token line + N-1 following reads).
+// snippetCount parses optional {N} after the token. No brace => 1.
+// {N} is total lines in the snippet (token line + N-1 following).
 func snippetCount(line string, tokenEnd int) (int, error) {
 	if tokenEnd < 0 || tokenEnd >= len(line) || line[tokenEnd] != '{' {
 		return 1, nil
@@ -139,8 +125,7 @@ func snippetCount(line string, tokenEnd int) (int, error) {
 	return n, nil
 }
 
-// expand appends up to n-1 following lines without further token Find.
-// bad is the invalid-UTF-8 line when a consumed line fails decode (not appended).
+// expand appends up to n-1 following lines. bad is set on invalid UTF-8.
 func expand(br *bufio.Reader, line string, lineNo, n int) (joined string, newLineNo int, bad string) {
 	for i := 1; i < n; i++ {
 		next, err := br.ReadString('\n')
@@ -159,7 +144,6 @@ func expand(br *bufio.Reader, line string, lineNo, n int) (joined string, newLin
 	return line, lineNo, ""
 }
 
-// indent prefixes non-blank lines only.
 func indent(text, prefix string) string {
 	if text == "" {
 		return text
@@ -177,7 +161,6 @@ func indent(text, prefix string) string {
 	return b.String()
 }
 
-// dedent strips the common leading whitespace from non-blank lines.
 func dedent(text string) string {
 	if text == "" {
 		return text
@@ -236,22 +219,15 @@ func commonPrefix(a, b string) string {
 	return a[:i]
 }
 
-// --- exclude ---
-
-// excludeMatch reports whether rel (slash-separated, relative to scan root) is excluded.
-// Dir exclude needs trailing slash: check both rel and rel+"/".
 func excludeMatch(gi *ignore.GitIgnore, rel string, isDir bool) bool {
 	if isDir {
-		// Pattern "vendor/" matches "vendor/" but not bare "vendor".
 		return gi.MatchesPath(rel) || gi.MatchesPath(rel+"/")
 	}
 	return gi.MatchesPath(rel)
 }
 
-// prepareExcludeSpec builds the exclude GitIgnore:
-//
-//	order: DefaultGlobs (unless includeHidden) -> .gitignore (if -g and root is dir) -> -x
-//	dedupe preserving order (first wins). Blank/#/whitespace lines are no-ops.
+// prepareExcludeSpec: DefaultGlobs -> .gitignore (-g, dir root) -> -x.
+// Dedupes preserving first occurrence. Blank/# lines are no-ops.
 func prepareExcludeSpec(root string, exclude []string, includeHidden, useGitignore bool) (*ignore.GitIgnore, error) {
 	var lines []string
 	if !includeHidden {
@@ -271,7 +247,6 @@ func prepareExcludeSpec(root string, exclude []string, includeHidden, useGitigno
 	return ignore.CompileIgnoreLines(dedupeFirst(lines)...), nil
 }
 
-// dedupeFirst keeps the first occurrence of each identical pattern string.
 func dedupeFirst(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
@@ -285,8 +260,6 @@ func dedupeFirst(in []string) []string {
 	return out
 }
 
-// getGitignorePatterns reads root/.gitignore (splitlines).
-// Missing path or non-regular file -> empty slice (no error).
 func getGitignorePatterns(root string) ([]string, error) {
 	p := filepath.Join(root, ".gitignore")
 	fi, err := os.Stat(p)
@@ -300,28 +273,22 @@ func getGitignorePatterns(root string) ([]string, error) {
 	return splitlines(data), nil
 }
 
-// isExcluded reports whether path should be skipped during the walk.
 func (e *Extractor) isExcluded(path string, isDir bool) bool {
 	rel, err := filepath.Rel(e.root, path)
 	if err != nil {
-		// Relative path vs abs root (chdir): still honor out skip.
 		return e.isOutPath(path)
 	}
 	rel = filepath.ToSlash(rel)
-	// Never exclude scan root — DefaultGlobs ".*" matches ".".
-	// Root wins over out-path skip (scan root that is also -o is still processed).
+	// Never exclude scan root (DefaultGlobs ".*" matches ".").
 	if rel == "." || strings.HasPrefix(rel, "../") {
 		return false
 	}
-	// Skip the configured out file (abs path). Stdout-only never skips.
 	if e.isOutPath(path) {
 		return true
 	}
 	return excludeMatch(e.gi, rel, isDir)
 }
 
-// isOutPath reports whether path is the configured out file (Abs equality).
-// Stdout-only / empty outAbs => never skip. outAbs is cached once in setOut.
 func (e *Extractor) isOutPath(path string) bool {
 	if e.outAbs == "" {
 		return false
@@ -330,8 +297,6 @@ func (e *Extractor) isOutPath(path string) bool {
 	return err == nil && absPath == e.outAbs
 }
 
-// splitlines splits on \n / \r\n / \r. No keepends. No trailing empty from a
-// final line break.
 func splitlines(data []byte) []string {
 	if len(data) == 0 {
 		return nil

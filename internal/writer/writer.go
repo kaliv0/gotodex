@@ -17,36 +17,34 @@ type StopExtraction struct{}
 
 func (StopExtraction) Error() string { return "stop extraction" }
 
-// Writer writes extract output to a file and/or stdout (with optional TTY pager).
+// Writer writes extract output to a file and/or stdout.
 type Writer struct {
 	stdout   io.Writer
 	stderr   io.Writer
 	file     *os.File
-	pager    func(string)  // nil => default page(). TTY Close hook
-	pagerBuf *bytes.Buffer // non-nil => TTY pager mode
-	Path     string        // empty => no file
+	pager    func(string) // nil => default page()
+	pagerBuf *bytes.Buffer
+	Path     string // empty => no file
 	mu       sync.Mutex
 	ToStdout bool
 }
 
-// Options configures NewWith (prod + test injection of sinks / TTY / pager).
+// Options configures NewWith.
 type Options struct {
-	Stdout   io.Writer // nil => os.Stdout (ignored while TTY paging)
+	Stdout   io.Writer // nil => os.Stdout
 	Stderr   io.Writer // nil => os.Stderr
 	Pager    func(string)
 	Path     string
 	ToStdout bool
-	TTY      bool // when ToStdout: buffer then page on Close
+	TTY      bool // buffer then page on Close
 }
 
-// New builds a Writer. path empty and toStdout false is invalid for real runs.
-// Callers set at least one sink. TTY from os.Stdout. Path set => open/truncate now.
+// New builds a Writer. Path set => open/truncate now.
 func New(path string, toStdout bool) (*Writer, error) {
 	return NewWith(Options{Path: path, ToStdout: toStdout, TTY: toStdout && stdoutIsTTY()})
 }
 
-// NewWith builds a Writer from Options (inject stdout/stderr/pager/TTY in tests).
-// Path set => open/truncate immediately.
+// NewWith builds a Writer from Options.
 func NewWith(opts Options) (*Writer, error) {
 	stdout := opts.Stdout
 	if stdout == nil {
@@ -95,7 +93,6 @@ func (w *Writer) WriteEntry(lineNum int, line string) error {
 	return w.write(fmt.Sprintf("\tline %d: %s", lineNum, line))
 }
 
-// Debug uses write (tee / StopExtraction like hits).
 func (w *Writer) Debug(text string) error {
 	return w.write(text)
 }
@@ -109,8 +106,8 @@ func (w *Writer) Error(text string) error {
 	return err
 }
 
-// write sends to stdout and/or file. Stdout-only EPIPE -> StopExtraction.
-// Tee EPIPE -> disableStdout then keep writing the file.
+// write sends to stdout and/or file.
+// Stdout-only EPIPE => StopExtraction. Tee EPIPE => disable stdout, keep file.
 func (w *Writer) write(text string) error {
 	if w.ToStdout {
 		if err := w.writeStdout(text); err != nil {
@@ -135,7 +132,6 @@ func (w *Writer) disableStdout() {
 func (w *Writer) writeFile(text string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	// File opened in New/NewWith when Path set. Nil after Close or when Path empty.
 	if w.file == nil {
 		return nil
 	}
@@ -149,7 +145,6 @@ func (w *Writer) writeStdout(text string) error {
 	if _, err := io.WriteString(w.stdout, text); err != nil {
 		return err
 	}
-	// Flush after write when not pager-buffered (os.File has no userspace buffer).
 	if w.UsesPager() {
 		return nil
 	}
@@ -177,7 +172,7 @@ func (w *Writer) Close() error {
 	return nil
 }
 
-// IsBrokenPipe reports whether err is EPIPE or a closed pipe (stdout consumer gone).
+// IsBrokenPipe reports EPIPE or a closed pipe.
 func IsBrokenPipe(err error) bool {
 	return errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE)
 }
@@ -187,14 +182,13 @@ func page(text string) {
 	if pager == "" {
 		pager = "less"
 	}
-	if _, ok := os.LookupEnv("LESS"); !ok {
-		_ = os.Setenv("LESS", "-RF")
-	}
-	// Split on whitespace so PAGER="less -R" works (no shell).
 	cmd := pagerCmd(pager)
 	cmd.Stdin = bytes.NewBufferString(text)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if _, ok := os.LookupEnv("LESS"); !ok {
+		cmd.Env = append(os.Environ(), "LESS=-RF")
+	}
 	_ = cmd.Run()
 }
 

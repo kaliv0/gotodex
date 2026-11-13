@@ -15,14 +15,13 @@ import (
 	"gotodex/internal/writer"
 )
 
-// appOut is the expected default scan of sample/app.py.
 const appOut = "======================\napp.py\n\tline 1: # TODO: main\n\tline 2: # FIXME: bug\n"
 
 func TestMissingDependentFlagErrors(t *testing.T) {
 	dir := t.TempDir()
 	tests := []struct {
 		args []string
-		need string // substring in error
+		need string
 	}{
 		{[]string{"-i", dir}, "-i/--ignore-default flag requires -t/--tokens"},
 		{[]string{"-m", "20", dir}, "-m/--max-depth flag requires -r/--recursive"},
@@ -71,7 +70,6 @@ func TestMaxDepthRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-// Non-int -m still exits 2 via finish (Cobra parse error).
 func TestMaxDepthRejectsNonIntViaExecute(t *testing.T) {
 	dir := t.TempDir()
 	code := finish(runRoot([]string{"-r", "-m", "xyz", dir}, io.Discard, &bytes.Buffer{}))
@@ -99,7 +97,6 @@ func TestArgvReachesExtractor(t *testing.T) {
 	}
 }
 
-// writeTokenFixture writes a file with WARN and REVISIT markers for -t tests.
 func writeTokenFixture(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tokens.py")
@@ -246,7 +243,6 @@ func TestTeeViaCLI(t *testing.T) {
 	}
 }
 
-// Stdout-only -d EPIPE -> StopExtraction -> exit 141 (same path as hits).
 func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 	sample := materializeCLISample(t)
 	code := finish(runRoot(
@@ -259,7 +255,6 @@ func TestSBrokenPipeViaDebugExits141(t *testing.T) {
 	}
 }
 
-// Stdout-only write EPIPE -> StopExtraction -> exit 141.
 func TestSBrokenPipeWriteExits141(t *testing.T) {
 	sample := materializeCLISample(t)
 	code := finish(runRoot(
@@ -320,7 +315,6 @@ func TestExitCodeMapping(t *testing.T) {
 	}
 }
 
-// runInterruptible: context.Canceled -> errInterrupted -> exit 130.
 func TestRunInterruptibleMapsCanceled(t *testing.T) {
 	err := runInterruptible(func(ctx context.Context) error {
 		return context.Canceled
@@ -354,7 +348,6 @@ func TestHelpContainsTrashBanner(t *testing.T) {
 		t.Fatalf("help: %v", err)
 	}
 	help := out.String()
-	// Distinctive banner lines — do not require byte-identical art.
 	for _, needle := range []string{"GTX", "Peak trash sniffer"} {
 		if !strings.Contains(help, needle) {
 			t.Errorf("help missing %q (want banner art / long description)\nhelp:\n%s", needle, help)
@@ -362,7 +355,6 @@ func TestHelpContainsTrashBanner(t *testing.T) {
 	}
 }
 
-// cmd/gtx must exist and call cli.Execute.
 func TestCmdGTXMainExists(t *testing.T) {
 	mainPath := filepath.Join(repoRoot(t), "cmd", "gtx", "main.go")
 	b, err := os.ReadFile(mainPath)
@@ -375,7 +367,6 @@ func TestCmdGTXMainExists(t *testing.T) {
 	}
 }
 
-// cmd/todex and cmd/tdx must not exist.
 func TestCmdTodexAndTDXGone(t *testing.T) {
 	root := repoRoot(t)
 	for _, name := range []string{"todex", "tdx"} {
@@ -405,7 +396,21 @@ func TestBuildGTXVersion(t *testing.T) {
 	}
 }
 
-// README must mention key short flags.
+func TestVersionShortFlag(t *testing.T) {
+	root := NewRoot()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"-v"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("gtx -v: %v\nout=%q", err, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "gtx version") {
+		t.Fatalf("gtx -v want contain %q, got %q", "gtx version", got)
+	}
+}
+
 func TestREADMEMentionsKeyFlags(t *testing.T) {
 	path := filepath.Join(repoRoot(t), "README.md")
 	b, err := os.ReadFile(path)
@@ -447,6 +452,5 @@ func (brokenPipeWriter) Write([]byte) (int, error) {
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	// internal/cli -> repo root (same as materializeCLISample).
 	return filepath.Clean(filepath.Join("..", ".."))
 }

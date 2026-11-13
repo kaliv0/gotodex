@@ -128,14 +128,12 @@ func TestTokenEdgeCases(t *testing.T) {
 		if got := matched(m, "# 中文标记: x"); got != "中文标记" {
 			t.Fatalf("got %q", got)
 		}
-		// Adjacent CJK letter is a word char — should not match mid-word.
 		if got := matched(m, "前中文标记后"); got != "" {
 			t.Fatalf("expected no match inside word, got %q", got)
 		}
 	})
 	t.Run("overlap_leftmost_longest", func(t *testing.T) {
 		m := pattern(t, []string{"AB", "ABC", "BC"}, true)
-		// space before A so \w-boundary allows a match. Prefer longest alt.
 		if got := matched(m, " ABC "); got != "ABC" {
 			t.Fatalf("got %q want ABC", got)
 		}
@@ -183,7 +181,6 @@ func TestSnippetPastEOFDoesNotCrash(t *testing.T) {
 
 func TestGetSnippetCountDefaultOne(t *testing.T) {
 	line := "# TODO: x"
-	// Call with token-end index (after token).
 	start := strings.Index(line, "TODO") + len("TODO")
 	n, err := snippetCount(line, start)
 	if err != nil {
@@ -196,7 +193,6 @@ func TestGetSnippetCountDefaultOne(t *testing.T) {
 
 func TestGetSnippetCountParsesBraces(t *testing.T) {
 	line := "# TODO{3} x"
-	// Token-end index, not Index("{").
 	start := strings.Index(line, "TODO") + len("TODO")
 	n, err := snippetCount(line, start)
 	if err != nil {
@@ -207,12 +203,11 @@ func TestGetSnippetCountParsesBraces(t *testing.T) {
 	}
 }
 
-// Invalid {N} errors in both modes with a unified message.
 func TestInvalidSnippetRaises(t *testing.T) {
 	cases := []struct {
 		name    string
 		content string
-		wantSub string // beyond "invalid snippet count"
+		wantSub string
 	}{
 		{name: "unclosed", content: "# TODO{3 no close\n", wantSub: "unclosed"},
 		{name: "non_int", content: "# TODO{abc}\n", wantSub: "abc"},
@@ -240,6 +235,33 @@ func TestInvalidSnippetRaises(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestInvalidSnippetDebugAddsFileLine(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		wantSub string
+	}{
+		{name: "unclosed", content: "# TODO{3 no close\n", wantSub: "unclosed"},
+		{name: "non_int", content: "# TODO{abc}\n", wantSub: "abc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "bad.py")
+			out := filepath.Join(dir, "out.txt")
+			mustWrite(t, src, tc.content)
+			ex := mustNew(t, Options{Path: src, Out: out, Debug: true})
+			err := ex.Run(context.Background())
+			if err == nil {
+				t.Fatal("want error for invalid snippet count")
+			}
+			msg := err.Error()
+			mustContain(t, msg, "invalid snippet count", tc.wantSub)
+			mustContain(t, msg, "file", "line", "bad.py", "line 1:")
+		})
 	}
 }
 
@@ -314,7 +336,6 @@ func TestGMissingGitignoreIsNoop(t *testing.T) {
 }
 
 func TestFilePathGIsNoopButStillProcesses(t *testing.T) {
-	// -g only loads .gitignore for directory scans -> explicit file PATH always processed
 	sample := materializeSample(t)
 	out := filepath.Join(sample, "out.txt")
 	ex := mustNew(t, Options{
@@ -372,7 +393,6 @@ func TestPrepareExcludeSpecXPatterns(t *testing.T) {
 }
 
 func TestPrepareExcludeSpecBangOrder(t *testing.T) {
-	// Last gitignore-style rule wins. -x bang after gitignore vendor/.
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".gitignore"), "vendor/\nskip_me.py\n")
 	gi, err := prepareExcludeSpec(dir, []string{"!vendor/", "!vendor/**"}, true, true)
@@ -391,7 +411,6 @@ func TestPrepareExcludeSpecBangOrder(t *testing.T) {
 }
 
 func TestPrepareExcludeSpecIgnoresBlankAndCommentLines(t *testing.T) {
-	// Blank / # / whitespace lines are no-op patterns.
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, ".gitignore"), "# comment\n\n   \nonly_me.py\n")
 	gi, err := prepareExcludeSpec(dir, nil, true, true)

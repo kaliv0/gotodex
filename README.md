@@ -4,7 +4,7 @@
 
 # gotodex
 
-Peak mud digger and TODO extractor
+Peak trash sniffer and TODO extractor
 
 ```bash
 go install ./cmd/gtx
@@ -25,7 +25,7 @@ gtx <PATH> [OPTIONS...]
 | `-f`, `--full-path` | display absolute dir/file path |
 | `-c`, `--concise` | display only token messages e.g. '#TODO{5}: after release', ignore longer snippets |
 | `-r`, `--recursive` | traverse given dir path recursively |
-| `-m`, `--max-depth N` | maximum depth of dir traversal - used with -r/--recursive flag |
+| `-m`, `--max-depth N` | maximum depth of dir traversal - used with -r/--recursive flag (default: 120) |
 | `-d`, `--debug` | enable debug mode |
 | `-o`, `--out OUT` | path to output file - if existing dir is passed instead TODO out file will be saved inside the path |
 | `-s`, `--stdout` | output result to stdout |
@@ -35,4 +35,13 @@ gtx <PATH> [OPTIONS...]
 ---
 
 *Gotodex* is a Go rewrite of [todex](https://github.com/kaliv0/todex) (originally in Python).<br>
+Parity target: Python todex **2.4.7**. See [FOLLOWUPS.md](FOLLOWUPS.md) for intentional deltas.<br>
 The application code is written by hand. LLMs are used to maintain the test suite and optimize certain parts of the code base.
+
+## Intentional deltas vs Python
+
+- Binary name **`gtx`** only (no `todex` / `tdx` entrypoints). Unix-only.
+- **`-t` / `-x`**: Cobra `StringSlice` accepts comma-separated values (and repeated flags). Python uses `nargs="+"`.
+- Library **`MaxDepth <= 0` => 120**. Python library rejects `<= 0`. CLI still rejects non-positive `-m`.
+- Token regex: Go RE2 has no lookbehind. Unicode word boundaries are checked in code.
+- Pager: `PAGER` split on whitespace (no shell). `LESS=-RF` is set on the pager child only when unset. Process env is not mutated.
