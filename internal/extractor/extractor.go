@@ -21,13 +21,12 @@ import (
 
 // Extractor scans PATH for tokens and writes results.
 type Extractor struct {
-	re        *regexp.Regexp
-	gi        *ignore.GitIgnore
-	out       *writer.Writer
-	afterFile func(path string) // test seam: mid-walk cancel
-	root      string
-	outAbs    string // empty => no out-file skip
-	opts      Options
+	re     *regexp.Regexp
+	gi     *ignore.GitIgnore
+	out    *writer.Writer
+	root   string
+	outAbs string // abs out path, empty when stdout-only
+	opts   Options
 }
 
 // New validates options and builds the token regexp and exclude spec.
@@ -106,7 +105,7 @@ func (e *Extractor) setOut() error {
 		}
 		path, toStdout = name, e.opts.Tee
 	}
-	// Injected sinks (tests / CLI buffers) skip TTY pager detection.
+	// custom StdoutW/StderrW skip TTY pager detection
 	tty := false
 	if toStdout && e.opts.StdoutW == nil && e.opts.StderrW == nil {
 		if fi, err := os.Stdout.Stat(); err == nil {
@@ -180,9 +179,6 @@ func (e *Extractor) processFile(ctx context.Context, path string) error {
 	}
 	if e.isExcluded(path, false) {
 		return nil
-	}
-	if e.afterFile != nil {
-		defer e.afterFile(path)
 	}
 
 	if err := e.debug("\t" + e.pathName(path) + "\n"); err != nil {

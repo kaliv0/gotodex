@@ -21,7 +21,6 @@ type Writer struct {
 	stdout   io.Writer
 	stderr   io.Writer
 	file     *os.File
-	pager    func(string) // nil => default page()
 	pagerBuf *bytes.Buffer
 	Path     string // empty => no file
 	ToStdout bool
@@ -31,7 +30,6 @@ type Writer struct {
 type Options struct {
 	Stdout   io.Writer // nil => os.Stdout
 	Stderr   io.Writer // nil => os.Stderr
-	Pager    func(string)
 	Path     string
 	ToStdout bool
 	TTY      bool // buffer then page on Close
@@ -57,7 +55,6 @@ func NewWith(opts Options) (*Writer, error) {
 		ToStdout: opts.ToStdout,
 		stdout:   stdout,
 		stderr:   stderr,
-		pager:    opts.Pager,
 	}
 	if opts.ToStdout && opts.TTY {
 		w.pagerBuf = &bytes.Buffer{}
@@ -144,9 +141,6 @@ func (w *Writer) writeStdout(text string) error {
 	if _, err := io.WriteString(w.stdout, text); err != nil {
 		return err
 	}
-	if w.UsesPager() {
-		return nil
-	}
 	if f, ok := w.stdout.(flusher); ok {
 		return f.Flush()
 	}
@@ -156,11 +150,7 @@ func (w *Writer) writeStdout(text string) error {
 // Close runs the pager if needed and closes the output file.
 func (w *Writer) Close() error {
 	if w.UsesPager() {
-		fn := page
-		if w.pager != nil {
-			fn = w.pager
-		}
-		fn(w.pagerBuf.String())
+		page(w.pagerBuf.String())
 	}
 	if w.file != nil {
 		err := w.file.Close()
@@ -181,7 +171,7 @@ func page(text string) {
 		pager = "less"
 	}
 	cmd := pagerCmd(pager)
-	cmd.Stdin = bytes.NewBufferString(text)
+	cmd.Stdin = strings.NewReader(text)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if _, ok := os.LookupEnv("LESS"); !ok {

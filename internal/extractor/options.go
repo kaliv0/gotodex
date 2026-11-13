@@ -20,7 +20,7 @@ type Options struct {
 	Out           string // empty => defaultOutName when not stdout-only
 	Tokens        []string
 	Exclude       []string
-	MaxDepth      int       // <= 0 => DefaultMaxDepth (normalized in New)
+	MaxDepth      int       // zero or negative becomes DefaultMaxDepth in New
 	Stdout        bool      // -s stdout-only
 	StdoutW       io.Writer // nil => os.Stdout. *W avoids clash with Stdout bool
 	StderrW       io.Writer // nil => os.Stderr

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -56,11 +57,10 @@ func TestNonTTYUsesStdout(t *testing.T) {
 }
 
 func TestTTYBuffersAndPagesOnClose(t *testing.T) {
-	var seen []string
+	paged := capturePager(t)
 	w := mustNewWith(t, writer.Options{
 		ToStdout: true,
 		TTY:      true,
-		Pager:    func(text string) { seen = append(seen, text) },
 	})
 	if !w.UsesPager() {
 		t.Fatal("TTY should use pager")
@@ -71,23 +71,26 @@ func TestTTYBuffersAndPagesOnClose(t *testing.T) {
 	if err := w.WriteEntry(1, "# TODO: x\n"); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 0 {
-		t.Fatalf("pager called before Close: %v", seen)
+	if _, err := os.Stat(paged); !os.IsNotExist(err) {
+		t.Fatalf("pager wrote before Close: %v", err)
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 1 || seen[0] != payloadA {
-		t.Fatalf("pager=%q want %q", seen, payloadA)
+	got, err := os.ReadFile(paged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != payloadA {
+		t.Fatalf("pager=%q want %q", got, payloadA)
 	}
 }
 
 func TestTTYErrorGoesToPagerBuffer(t *testing.T) {
-	var seen []string
+	paged := capturePager(t)
 	w := mustNewWith(t, writer.Options{
 		ToStdout: true,
 		TTY:      true,
-		Pager:    func(text string) { seen = append(seen, text) },
 	})
 	if !w.UsesPager() {
 		t.Fatal("TTY should use pager")
@@ -98,8 +101,12 @@ func TestTTYErrorGoesToPagerBuffer(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 1 || seen[0] != "boom\n" {
-		t.Fatalf("pager=%q want [boom\\n]", seen)
+	got, err := os.ReadFile(paged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "boom\n" {
+		t.Fatalf("pager=%q want boom\\n", got)
 	}
 }
 
@@ -120,22 +127,28 @@ func TestNonTTYErrorGoesToStderr(t *testing.T) {
 }
 
 func TestTTYTeePagesAndWritesFile(t *testing.T) {
-	var seen []string
+	paged := capturePager(t)
 	outPath := filepath.Join(t.TempDir(), "out.txt")
 	w := mustNewWith(t, writer.Options{
 		Path:     outPath,
 		ToStdout: true,
 		TTY:      true,
-		Pager:    func(text string) { seen = append(seen, text) },
 	})
+	if !w.UsesPager() {
+		t.Fatal("TTY should use pager")
+	}
 	if err := w.WriteEntry(1, "# TODO: x\n"); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 1 || seen[0] != entryTODO1 {
-		t.Fatalf("pager=%q want %q", seen, entryTODO1)
+	got, err := os.ReadFile(paged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != entryTODO1 {
+		t.Fatalf("pager=%q want %q", got, entryTODO1)
 	}
 	body, err := os.ReadFile(outPath)
 	if err != nil {
@@ -423,6 +436,14 @@ func TestNewMatchesNewWithTTYDetection(t *testing.T) {
 	}
 }
 
+// Regression: Options must not reintroduce Pager injection.
+func TestOptionsHasNoPagerField(t *testing.T) {
+	rt := reflect.TypeOf(writer.Options{})
+	if _, ok := rt.FieldByName("Pager"); ok {
+		t.Fatal("Options must not have Pager field")
+	}
+}
+
 // NewWith wraps os.Create failures with %w.
 func TestCreateFailureWrapped(t *testing.T) {
 	if os.Geteuid() == 0 {
@@ -470,6 +491,21 @@ func unsetLESS(t *testing.T) {
 			_ = os.Unsetenv("LESS")
 		}
 	})
+}
+
+// capturePager installs a PAGER that writes stdin to a temp file. Returns that path.
+// pagerCmd splits on whitespace so "script outpath" works.
+func capturePager(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	out := filepath.Join(dir, "paged.txt")
+	script := filepath.Join(dir, "pager.sh")
+	body := "#!/bin/sh\ncat > \"$1\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PAGER", script+" "+out)
+	return out
 }
 
 type brokenPipeWriter struct{}

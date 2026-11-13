@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -522,6 +521,23 @@ func TestSkipsUndecodableSilentWithoutDebug(t *testing.T) {
 	}
 }
 
+// cancelOnHit cancels after the first hit line for name (e.g. "a.py").
+type cancelOnHit struct {
+	buf    bytes.Buffer
+	cancel context.CancelFunc
+	name   string
+	done   bool
+}
+
+func (c *cancelOnHit) Write(p []byte) (int, error) {
+	n, err := c.buf.Write(p)
+	if !c.done && bytes.Contains(p, []byte("TODO: "+c.name)) {
+		c.done = true
+		c.cancel()
+	}
+	return n, err
+}
+
 func TestRunCanceledMidWalk(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.txt")
@@ -530,22 +546,17 @@ func TestRunCanceledMidWalk(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var processed atomic.Int32
-	ex := mustNew(t, Options{Path: dir, Out: out})
-	ex.afterFile = func(string) {
-		if processed.Add(1) == 1 {
-			cancel()
-		}
-	}
+	defer cancel()
+	hook := &cancelOnHit{cancel: cancel, name: "a.py"}
+	ex := mustNew(t, Options{Path: dir, Out: out, Tee: true, StdoutW: hook})
 
 	err := ex.Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run err=%v want context.Canceled", err)
 	}
-	n := processed.Load()
-	if n != 1 {
-		t.Fatalf("processed %d files, want 1 (stop before b.py/c.py)", n)
-	}
+	text := readFile(t, out)
+	mustContain(t, text, "TODO: a.py")
+	mustNotContain(t, text, "TODO: b.py", "TODO: c.py")
 }
 
 func TestRunPreCanceledCtx(t *testing.T) {
@@ -557,16 +568,13 @@ func TestRunPreCanceledCtx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	var processed atomic.Int32
 	ex := mustNew(t, Options{Path: dir, Out: out})
-	ex.afterFile = func(string) { processed.Add(1) }
-
 	err := ex.Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run err=%v want context.Canceled", err)
 	}
-	if n := processed.Load(); n != 0 {
-		t.Fatalf("processed %d files, want 0", n)
+	if _, err := os.Stat(out); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("out file must not be created when ctx is pre-canceled, err=%v", err)
 	}
 }
 
